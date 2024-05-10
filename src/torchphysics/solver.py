@@ -11,14 +11,14 @@ class OptimizerSetting:
     A helper class to sum up the optimization setup in a single class.
     """
     def __init__(self, optimizer_class, lr, optimizer_args={}, scheduler_class=None,
-                 scheduler_args={}, scheduler_frequency=1):
+                 scheduler_args={}, scheduler_frequency=1,monitor_lr=None):
         self.optimizer_class = optimizer_class
         self.lr = lr
         self.optimizer_args = optimizer_args
         self.scheduler_class = scheduler_class
         self.scheduler_args = scheduler_args
         self.scheduler_frequency = scheduler_frequency
-
+        self.monitor_lr=monitor_lr
 
 class Solver(pl.LightningModule):
     """
@@ -41,12 +41,17 @@ class Solver(pl.LightningModule):
                  train_conditions,
                  val_conditions=(),
                  optimizer_setting=OptimizerSetting(torch.optim.Adam,
-                                                    1e-3)):
+                                                    1e-3),
+                loss_function_schedule=[{
+                        "conditions":[],
+                        "max_iter":-1
+                    }
+                ]):
         super().__init__()
         self.train_conditions = nn.ModuleList(train_conditions)
         self.val_conditions = nn.ModuleList(val_conditions)
         self.optimizer_setting = optimizer_setting
-
+        self.loss_function_schedule=loss_function_schedule
     def train_dataloader(self):
         """"""
         # HACK: create an empty trivial dataloader, since real data is loaded
@@ -83,7 +88,33 @@ class Solver(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         loss = torch.zeros(1, requires_grad=True, device=self.device)
-        for condition in self.train_conditions:
+        if self.n_training_step<=self.loss_function_schedule[0]["max_iter"]:
+            train_conditions_index=self.loss_function_schedule[0]["conditions"]
+            for condition in [self.train_conditions[j] for j in train_conditions_index]:
+                cond_loss =  condition(device=self.device, iteration=self.n_training_step)
+                self.log(f'train/{condition.name}', cond_loss)
+                loss = loss + condition.weight*cond_loss
+            self.log('train/loss', loss)
+            self.n_training_step += 1
+            return loss
+        
+
+        if self.n_training_step>=self.loss_function_schedule[-1]["max_iter"]:
+            for condition in self.train_conditions:
+                cond_loss =  condition(device=self.device, iteration=self.n_training_step)
+                self.log(f'train/{condition.name}', cond_loss)
+                loss = loss + condition.weight*cond_loss
+            self.log('train/loss', loss)
+            self.n_training_step += 1
+            return loss
+        
+
+        for i in range(len(self.loss_function_schedule)-1):
+            if (self.n_training_step<=self.loss_function_schedule[i+1]["max_iter"]) & (self.n_training_step>self.loss_function_schedule[i]["max_iter"]):
+                train_conditions_index=self.loss_function_schedule[i+1]["conditions"]
+                break
+        
+        for condition in [self.train_conditions[j] for j in train_conditions_index]:
             cond_loss =  condition(device=self.device, iteration=self.n_training_step)
             self.log(f'train/{condition.name}', cond_loss)
             loss = loss + condition.weight*cond_loss
@@ -111,7 +142,8 @@ class Solver(pl.LightningModule):
         )
         lr_scheduler = {'scheduler': lr_scheduler, 'name': 'learning_rate',
                         'interval': 'step',
-                        'frequency': self.optimizer_setting.scheduler_frequency}
+                        'frequency': self.optimizer_setting.scheduler_frequency,
+                        'monitor': self.optimizer_setting.monitor_lr}
         for input_name in self.optimizer_setting.scheduler_args:
             lr_scheduler[input_name] = self.optimizer_setting.scheduler_args[input_name]
         return [optimizer], [lr_scheduler]
