@@ -226,10 +226,11 @@ class PointSampler:
 
     def _check_iteration_number(self, iterations, num_of_new_points):
         if iterations == 10:
-            warnings.warn(f"""Sampling points with filter did run 10
-                              iterations and until now only found 
-                              {num_of_new_points} from {self.n_points} points.
-                              This may take some time.""")
+            #warnings.warn(f"""Sampling points with filter did run 10
+            #                  iterations and until now only found 
+            #                  {num_of_new_points} from {self.n_points} points.
+            #                  This may take some time.""")
+            pass
         elif iterations >= 20 and num_of_new_points == 0:
             raise RuntimeError("""Run 20 iterations and could not find a single 
                                   valid point for the filter condition.""")
