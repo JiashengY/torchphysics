@@ -42,16 +42,27 @@ class Solver(pl.LightningModule):
                  val_conditions=(),
                  optimizer_setting=OptimizerSetting(torch.optim.Adam,
                                                     1e-3),
-                loss_function_schedule=[{
+                 loss_function_schedule=[{
                         "conditions":[],
                         "max_iter":-1
                     }
-                ]):
+                ],
+                 weight_tunning=True,
+                 weight_tunning_parameters={
+                     "alfa":0.99,
+                     "E_rho":0.99,
+                     "Temperature":1
+                 }):
         super().__init__()
         self.train_conditions = nn.ModuleList(train_conditions)
         self.val_conditions = nn.ModuleList(val_conditions)
         self.optimizer_setting = optimizer_setting
         self.loss_function_schedule=loss_function_schedule
+        self.weight_tunning=weight_tunning
+        if self.weight_tunning:
+            self.alfa=weight_tunning_parameters["alfa"]
+            self.E_rho=weight_tunning_parameters["E_rho"]
+            self.Temperature=weight_tunning_parameters["Temperature"]
     def train_dataloader(self):
         """"""
         # HACK: create an empty trivial dataloader, since real data is loaded
@@ -86,24 +97,84 @@ class Solver(pl.LightningModule):
             condition._move_static_data(self.device)
         self.n_training_step = 0
 
+
+
+    def _ReLoBRALO(self,list_cond_loss,train_conditions_index):
+        m=len(list_cond_loss)
+        max_bal=max([list_cond_loss[i]/(self.Temperature*self.list_cond_loss_his[i]) for i in range(m)])
+        sum_exp_L=sum([torch.exp(list_cond_loss[i]/(self.Temperature*self.list_cond_loss_his[i])+max_bal) for i in range(m)])
+        lambda_bal=[m*torch.exp(list_cond_loss[i]/(self.Temperature*self.list_cond_loss_his[i])+max_bal) / sum_exp_L for i in range(m)]
+        max_init=max([list_cond_loss[i]/(self.Temperature*self.list_cond_loss_his_init[i]) for i in range(m)])
+        sum_exp_L_init=sum([torch.exp(list_cond_loss[i]/(self.Temperature*self.list_cond_loss_his_init[i])+max_init) for i in range(m)])
+        lambda_bal_init=[m*torch.exp(list_cond_loss[i]/(self.Temperature*self.list_cond_loss_his_init[i])+max_init) / sum_exp_L_init for i in range(m)]
+        rho=torch.bernoulli(torch.tensor(self.E_rho)) #### all terms share bernoulli random number
+        #print(sum_exp_L.item(),sum_exp_L_init.item())
+        for i in range(m):
+            #print(self.train_conditions[train_conditions_index[i]].name)
+            #print(alfa*(rho*self.train_conditions[i].weight+(1-rho)*lambda_bal_init[i]).item(),(1-alfa)*(lambda_bal[i]).item())
+            self.train_conditions[train_conditions_index[i]].weight=(self.alfa*(rho*self.train_conditions[i].weight+(1-rho)*lambda_bal_init[i])+(1-self.alfa)*lambda_bal[i]).item()
+            self.log(f'weight/{self.train_conditions[train_conditions_index[i]].name}', self.train_conditions[train_conditions_index[i]].weight)
+        
+        
+
+
     def training_step(self, batch, batch_idx):
         loss = torch.zeros(1, requires_grad=True, device=self.device)
-        if self.n_training_step<=self.loss_function_schedule[0]["max_iter"]:
+        ######### first set of loss functions #######
+        if self.n_training_step<=self.loss_function_schedule[0]["max_iter"]:   
             train_conditions_index=self.loss_function_schedule[0]["conditions"]
-            for condition in [self.train_conditions[j] for j in train_conditions_index]:
-                cond_loss =  condition(device=self.device, iteration=self.n_training_step)
-                self.log(f'train/{condition.name}', cond_loss)
-                loss = loss + condition.weight*cond_loss
+            if self.n_training_step==0:
+                self.list_cond_loss_his_init=[]
+                self.list_cond_loss_his=[]
+                for i in self.train_conditions:
+                    i.base_weight=i.weight
+                    i.weight=1
+                for condition in [self.train_conditions[j] for j in train_conditions_index]:
+                    cond_loss =  condition(device=self.device, iteration=self.n_training_step)
+                    self.log(f'train/{condition.name}', cond_loss)
+                    loss = loss + condition.base_weight*condition.weight*cond_loss
+                    #self.train_conditions[i].weight=1
+                    self.list_cond_loss_his_init.append(cond_loss)
+                    self.list_cond_loss_his=self.list_cond_loss_his_init
+                    list_cond_loss=self.list_cond_loss_his_init
+            else:
+                list_cond_loss=[]
+                for condition in [self.train_conditions[j] for j in train_conditions_index]:
+                    cond_loss =  condition(device=self.device, iteration=self.n_training_step)
+                    self.log(f'train/{condition.name}', cond_loss)
+                    loss = loss + condition.base_weight*condition.weight*cond_loss
+                    list_cond_loss.append(cond_loss)
+                if self.weight_tunning & (self.n_training_step%100==0):
+                    self._ReLoBRALO(list_cond_loss,train_conditions_index)
+            self.list_cond_loss_his=list_cond_loss
             self.log('train/loss', loss)
             self.n_training_step += 1
             return loss
         
-
+    
         if self.n_training_step>=self.loss_function_schedule[-1]["max_iter"]:
-            for condition in self.train_conditions:
-                cond_loss =  condition(device=self.device, iteration=self.n_training_step)
-                self.log(f'train/{condition.name}', cond_loss)
-                loss = loss + condition.weight*cond_loss
+            train_conditions_index=self.loss_function_schedule[-1]["conditions"]
+            n_step_init=self.loss_function_schedule[-1]["max_iter"]+1
+            if self.n_training_step<=(self.loss_function_schedule[-1]["max_iter"]+42):
+                self.list_cond_loss_his_init=[]
+                self.list_cond_loss_his=[]
+                for condition in self.train_conditions:
+                    cond_loss =  condition(device=self.device, iteration=self.n_training_step)
+                    self.log(f'train/{condition.name}', cond_loss)
+                    loss = loss + condition.base_weight*condition.weight*cond_loss
+                    self.list_cond_loss_his_init.append(cond_loss)
+                    self.list_cond_loss_his=self.list_cond_loss_his_init
+                    list_cond_loss=self.list_cond_loss_his_init
+            else:
+                list_cond_loss=[]
+                for condition in self.train_conditions:
+                    cond_loss =  condition(device=self.device, iteration=self.n_training_step)
+                    self.log(f'train/{condition.name}', cond_loss)
+                    loss = loss + condition.base_weight*condition.weight*cond_loss
+                    list_cond_loss.append(cond_loss)
+                if self.weight_tunning&((n_step_init-self.n_training_step)%100==0):
+                    self._ReLoBRALO(list_cond_loss,train_conditions_index)
+            self.list_cond_loss_his=list_cond_loss
             self.log('train/loss', loss)
             self.n_training_step += 1
             return loss
@@ -112,13 +183,28 @@ class Solver(pl.LightningModule):
         for i in range(len(self.loss_function_schedule)-1):
             if (self.n_training_step<=self.loss_function_schedule[i+1]["max_iter"]) & (self.n_training_step>self.loss_function_schedule[i]["max_iter"]):
                 train_conditions_index=self.loss_function_schedule[i+1]["conditions"]
+                n_step_init=self.loss_function_schedule[i]["max_iter"]+1
                 break
-        
-        for condition in [self.train_conditions[j] for j in train_conditions_index]:
-            cond_loss =  condition(device=self.device, iteration=self.n_training_step)
-            self.log(f'train/{condition.name}', cond_loss)
-            loss = loss + condition.weight*cond_loss
-
+        if self.n_training_step < (n_step_init+42):### Running-in buffer
+            self.list_cond_loss_his_init=[]
+            self.list_cond_loss_his=[]
+            for condition in [self.train_conditions[j] for j in train_conditions_index]:
+                cond_loss =  condition(device=self.device, iteration=self.n_training_step)
+                self.log(f'train/{condition.name}', cond_loss)
+                loss = loss + condition.base_weight*condition.weight*cond_loss
+                self.list_cond_loss_his_init.append(cond_loss)
+                self.list_cond_loss_his=self.list_cond_loss_his_init
+                list_cond_loss=self.list_cond_loss_his_init
+        else:
+            list_cond_loss=[]
+            for condition in [self.train_conditions[j] for j in train_conditions_index]:
+                cond_loss =  condition(device=self.device, iteration=self.n_training_step)
+                self.log(f'train/{condition.name}', cond_loss)
+                loss = loss + condition.base_weight*condition.weight*cond_loss
+                list_cond_loss.append(cond_loss)
+            if self.weight_tunning & ((n_step_init-self.n_training_step)%100==0):
+                    self._ReLoBRALO(list_cond_loss,train_conditions_index)
+        self.list_cond_loss_his=list_cond_loss
         self.log('train/loss', loss)
         self.n_training_step += 1
         return loss
