@@ -42,7 +42,7 @@ class Solver(pl.LightningModule):
                  val_conditions=(),
                  optimizer_setting=OptimizerSetting(torch.optim.Adam,
                                                     1e-3),
-                 loss_function_schedule=[{
+                 loss_function_schedule=[{ ##############Modified JY#####################
                         "conditions":[],
                         "max_iter":-1
                     }
@@ -52,11 +52,12 @@ class Solver(pl.LightningModule):
                      "alfa":0.99,
                      "E_rho":0.99,
                      "Temperature":1
-                 }):
+                 }):######################################################################
         super().__init__()
         self.train_conditions = nn.ModuleList(train_conditions)
         self.val_conditions = nn.ModuleList(val_conditions)
         self.optimizer_setting = optimizer_setting
+        ############################## Modified JY ######################################
         self.loss_function_schedule=loss_function_schedule
         self.weight_tunning=weight_tunning
         if self.weight_tunning:
@@ -66,6 +67,7 @@ class Solver(pl.LightningModule):
             self.nsteps=weight_tunning_parameters["tunning_every_n_steps"]
         else:
             self.nsteps=0
+        ###################################################################################
     def train_dataloader(self):
         """"""
         # HACK: create an empty trivial dataloader, since real data is loaded
@@ -100,7 +102,7 @@ class Solver(pl.LightningModule):
             condition._move_static_data(self.device)
         self.n_training_step = 0
 
-
+####################Modified JY######################################
 ###Multi-Objective Loss Balancing for Physics-Informed Deep Learning https://doi.org/10.13140/rg.2.2.20057.24169
     def _ReLoBRALO(self,list_cond_loss,train_conditions_index):   ## RElative LOss Balancing with RAndom LOokback
         m=len(list_cond_loss)
@@ -121,7 +123,7 @@ class Solver(pl.LightningModule):
         
 
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch, batch_idx): ####################### modified JY ################################
         loss = torch.zeros(1, requires_grad=True, device=self.device)
         ######### first set of loss functions #######
         if self.n_training_step<=self.loss_function_schedule[0]["max_iter"]:   
