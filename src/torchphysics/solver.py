@@ -51,7 +51,8 @@ class Solver(pl.LightningModule):
                  weight_tunning_parameters={
                      "alfa":0.99,
                      "E_rho":0.99,
-                     "Temperature":1
+                     "Temperature":1,
+                     "tunning_every_n_steps":100
                  }):######################################################################
         super().__init__()
         self.train_conditions = nn.ModuleList(train_conditions)
