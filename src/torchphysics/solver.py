@@ -106,10 +106,10 @@ class Solver(pl.LightningModule):
         m=len(list_cond_loss)
         max_bal=max([list_cond_loss[i]/(self.Temperature*self.list_cond_loss_his[i]) for i in range(m)])##very large number -- preventing softmax overflow
         sum_exp_L=sum([torch.exp(list_cond_loss[i]/(self.Temperature*self.list_cond_loss_his[i])-max_bal) for i in range(m)])
-        lambda_bal=[self.train_conditions.base_weight*m*torch.exp(list_cond_loss[i]/(self.Temperature*self.list_cond_loss_his[i])-max_bal) / sum_exp_L for i in range(m)]
+        lambda_bal=[self.train_conditions[i].base_weight*m*torch.exp(list_cond_loss[i]/(self.Temperature*self.list_cond_loss_his[i])-max_bal) / sum_exp_L for i in range(m)]
         max_init=max([list_cond_loss[i]/(self.Temperature*self.list_cond_loss_his_init[i]) for i in range(m)])
         sum_exp_L_init=sum([torch.exp(list_cond_loss[i]/(self.Temperature*self.list_cond_loss_his_init[i])-max_init) for i in range(m)])
-        lambda_bal_init=[self.train_conditions.base_weight*m*torch.exp(list_cond_loss[i]/(self.Temperature*self.list_cond_loss_his_init[i])-max_init) / sum_exp_L_init for i in range(m)]
+        lambda_bal_init=[self.train_conditions[i].base_weight*m*torch.exp(list_cond_loss[i]/(self.Temperature*self.list_cond_loss_his_init[i])-max_init) / sum_exp_L_init for i in range(m)]
         rho=torch.bernoulli(torch.tensor(self.E_rho)) #### all terms share bernoulli random number
         #print(sum_exp_L.item(),sum_exp_L_init.item())
         for i in range(m):
