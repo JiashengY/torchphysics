@@ -124,8 +124,14 @@ class Solver(pl.LightningModule):
     def _baseweight_tunner(self,list_cond_loss,train_conditions_index):
         m=len(list_cond_loss)
         for i in range(m):
+            factor=torch.bernoulli(torch.tensor(0.2)).item()
             if 1/list_cond_loss[i] >1:
                 self.train_conditions[train_conditions_index[i]].base_weight=1/list_cond_loss[i]
+            #print(i,self.train_conditions[train_conditions_index[i]].base_weight,factor)
+                self.train_conditions[train_conditions_index[i]].base_weight=self.train_conditions[train_conditions_index[i]].base_weight*(10**factor)
+            else:
+                self.train_conditions[train_conditions_index[i]].base_weight=10**factor
+            #print(i,self.train_conditions[train_conditions_index[i]].base_weight)
 
 
     def training_step(self, batch, batch_idx): ####################### modified JY ################################
@@ -185,9 +191,9 @@ class Solver(pl.LightningModule):
                     self.log(f'train/{condition.name}', cond_loss)
                     loss = loss + condition.weight*cond_loss
                     list_cond_loss.append(cond_loss)
-                if self.weight_tunning & (n_step_init-self.n_training_step)%1000==0:
-                    self._baseweight_tunner(list_cond_loss,train_conditions_index)
-                if self.weight_tunning&((n_step_init-self.n_training_step)%self.nsteps==0):
+                #if self.weight_tunning & ((self.n_training_step-n_step_init)%(self.nsteps*10))==0:
+                #    self._baseweight_tunner(list_cond_loss,train_conditions_index)
+                if self.weight_tunning&((self.n_training_step-n_step_init)%self.nsteps==0):
                     self._ReLoBRALO(list_cond_loss,train_conditions_index)
             self.list_cond_loss_his=list_cond_loss
             self.log('train/loss', loss)
@@ -218,8 +224,8 @@ class Solver(pl.LightningModule):
                 self.log(f'train/{condition.name}', cond_loss)
                 loss = loss + condition.weight*cond_loss
                 list_cond_loss.append(cond_loss)
-            if self.weight_tunning & (n_step_init-self.n_training_step)%1000==0:
-                self._baseweight_tunner(list_cond_loss,train_conditions_index)
+            #if self.weight_tunning & ((n_step_init-self.n_training_step)%(self.nsteps*10)==0):
+            #    self._baseweight_tunner(list_cond_loss,train_conditions_index)
             if self.weight_tunning & ((n_step_init-self.n_training_step)%self.nsteps==0):
                     self._ReLoBRALO(list_cond_loss,train_conditions_index)
         self.list_cond_loss_his=list_cond_loss
