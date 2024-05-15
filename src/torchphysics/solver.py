@@ -121,12 +121,17 @@ class Solver(pl.LightningModule):
             self.train_conditions[train_conditions_index[i]].weight=(self.alfa*(rho*self.train_conditions[i].weight+(1-rho)*lambda_bal_init[i])+(1-self.alfa)*lambda_bal[i]).item()
             self.log(f'weight/{self.train_conditions[train_conditions_index[i]].name}', self.train_conditions[train_conditions_index[i]].weight)
         
-        
+    def _baseweight_tunner(self,list_cond_loss,train_conditions_index):
+        m=len(list_cond_loss)
+        for i in range(m):
+            if 1/list_cond_loss[i] >1:
+                self.train_conditions[train_conditions_index[i]].base_weight=1/list_cond_loss[i]
 
 
     def training_step(self, batch, batch_idx): ####################### modified JY ################################
         loss = torch.zeros(1, requires_grad=True, device=self.device)
         ######### first set of loss functions #######
+        
         if self.n_training_step<=self.loss_function_schedule[0]["max_iter"]:   
             train_conditions_index=self.loss_function_schedule[0]["conditions"]
             if self.n_training_step==0:
@@ -155,6 +160,8 @@ class Solver(pl.LightningModule):
             self.list_cond_loss_his=list_cond_loss
             self.log('train/loss', loss)
             self.n_training_step += 1
+            #if self.n_training_step%1000==0:
+                #self._baseweight_tunner()
             return loss
         
     
@@ -178,11 +185,14 @@ class Solver(pl.LightningModule):
                     self.log(f'train/{condition.name}', cond_loss)
                     loss = loss + condition.weight*cond_loss
                     list_cond_loss.append(cond_loss)
+                if self.weight_tunning & (n_step_init-self.n_training_step)%1000==0:
+                    self._baseweight_tunner(list_cond_loss,train_conditions_index)
                 if self.weight_tunning&((n_step_init-self.n_training_step)%self.nsteps==0):
                     self._ReLoBRALO(list_cond_loss,train_conditions_index)
             self.list_cond_loss_his=list_cond_loss
             self.log('train/loss', loss)
             self.n_training_step += 1
+            
             return loss
         
 
@@ -208,11 +218,14 @@ class Solver(pl.LightningModule):
                 self.log(f'train/{condition.name}', cond_loss)
                 loss = loss + condition.weight*cond_loss
                 list_cond_loss.append(cond_loss)
+            if self.weight_tunning & (n_step_init-self.n_training_step)%1000==0:
+                self._baseweight_tunner(list_cond_loss,train_conditions_index)
             if self.weight_tunning & ((n_step_init-self.n_training_step)%self.nsteps==0):
                     self._ReLoBRALO(list_cond_loss,train_conditions_index)
         self.list_cond_loss_his=list_cond_loss
         self.log('train/loss', loss)
         self.n_training_step += 1
+        
         return loss
 
     def validation_step(self, batch, batch_idx):
