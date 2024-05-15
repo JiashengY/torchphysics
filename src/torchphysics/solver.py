@@ -118,7 +118,7 @@ class Solver(pl.LightningModule):
         for i in range(m):
             #print(self.train_conditions[train_conditions_index[i]].name)
             #print(alfa*(rho*self.train_conditions[i].weight+(1-rho)*lambda_bal_init[i]).item(),(1-alfa)*(lambda_bal[i]).item())
-            self.train_conditions[train_conditions_index[i]].weight=(self.alfa*(rho*self.train_conditions[i].weight+(1-rho)*lambda_bal_init[i])+(1-self.alfa)*lambda_bal[i]).item()
+            self.train_conditions[train_conditions_index[i]].weight=(self.alfa*(rho*self.train_conditions[train_conditions_index[i]].base_weight+(1-rho)*lambda_bal_init[i])+(1-self.alfa)*lambda_bal[i]).item()
             self.log(f'weight/{self.train_conditions[train_conditions_index[i]].name}', self.train_conditions[train_conditions_index[i]].weight)
         
         
