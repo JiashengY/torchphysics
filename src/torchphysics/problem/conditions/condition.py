@@ -127,12 +127,15 @@ class DataCondition(Condition):
     def _compute_dist(self, batch, device):
         x, y = batch
         x, y = x.to(device), y.to(device)
+        out_dims=y.coordinates
         model_out = self.module(x)
+        model_out_dims=model_out.coordinates
+        list_dims=[i in out_dims for i in model_out_dims ]
         if self.constrain_fn:
             model_out = self.constrain_fn({**model_out.coordinates, **x.coordinates})
         else:
             model_out = model_out.as_tensor
-        return torch.abs(model_out - y.as_tensor)
+        return torch.abs(model_out[0][list_dims] - y.as_tensor[0][list_dims])
 
     def forward(self, device='cpu', iteration=None):
         if self.use_full_dataset:
