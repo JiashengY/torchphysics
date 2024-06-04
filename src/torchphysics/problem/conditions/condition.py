@@ -135,7 +135,7 @@ class DataCondition(Condition):
             model_out = self.constrain_fn({**model_out.coordinates, **x.coordinates})
         else:
             model_out = model_out.as_tensor
-        return torch.abs(model_out[0][list_dims] - y.as_tensor[0][list_dims])
+        return torch.abs(model_out[0][list_dims] - y.as_tensor[0])
 
     def forward(self, device='cpu', iteration=None):
         if self.use_full_dataset:
@@ -161,6 +161,101 @@ class DataCondition(Condition):
             loss = loss**(1/self.root)
         return loss
 
+
+###############################################################################################
+
+
+
+class DataCondition_mean(Condition):
+    """
+    A condition that fits a single given module to data (handed through a PyTorch
+    dataloader).
+
+    Parameters
+    ----------
+    module : torchphysics.Model
+        The torch module which should be fitted to data.
+    dataloader : torch.utils.DataLoader
+        A PyTorch dataloader which supplies the iterator to load data-target pairs
+        from some given dataset. Data and target should be handed as points in input
+        or output spaces, i.e. with the correct point object.
+    norm : int or 'inf'
+        The 'norm' which should be computed for evaluation. If 'inf', maximum norm will
+        be used. Else, the result will be taken to the n-th potency (without computing the
+        root!)
+    root : float
+        the n-th root to be computed to obtain the final loss. E.g., if norm=2, root=2, the
+        loss is the 2-norm.
+    use_full_dataset : bool
+        Whether to perform single iterations or compute the error on the whole dataset during
+        forward call. The latter can especially be useful during validation.
+    name : str
+        The name of this condition which will be monitored in logging.
+    constrain_fn : callable, optional
+        A additional transformation that will be applied to the network output.
+        The function can use all the model inputs (e.g. space, time values)
+        and the corresponding outputs (the solution approximation).
+        Can be used to enforce some conditions (e.g. boundary values, or scaling the output)
+    weight : float
+        The weight multiplied with the loss of this condition during
+        training.
+    """
+
+    def __init__(self, module,dataloader, norm, root=1., use_full_dataset=False,
+                 name='datacondition_mean', constrain_fn = None,
+                 weight=1.0):
+        super().__init__(name=name, weight=weight, track_gradients=False)
+        self.module = module
+        self.dataloader = dataloader
+        self.norm = norm        self.root = root
+        self.use_full_dataset = use_full_dataset
+        self.constrain_fn = constrain_fn
+        if self.constrain_fn:
+            self.constrain_fn = UserFunction(self.constrain_fn)
+
+    def _compute_dist(self, batch, device):
+        x, y = batch
+        x, y = x.to(device), y.to(device)
+        out_dims=y.coordinates
+        model_out = self.module(x)
+        model_out_dims=model_out.coordinates
+        list_dims=[i in out_dims for i in model_out_dims ]
+        if self.constrain_fn:
+            model_out = self.constrain_fn({**model_out.coordinates, **x.coordinates})
+        else:
+            model_out = model_out.as_tensor
+        return torch.abs(model_out[0][list_dims] - y.as_tensor[0])
+
+    def forward(self, device='cpu', iteration=None):
+        if self.use_full_dataset:
+            loss = torch.zeros(1, requires_grad=True, device=device)
+            for batch in iter(self.dataloader):
+                a = self._compute_dist(batch, device)
+                if self.norm == 'inf':
+                    loss = torch.maximum(loss, torch.max(a))
+                else:
+                    loss = loss + torch.mean(a**self.norm)/len(self.dataloader)
+        else:
+            try:
+                batch = next(self.iterator)
+            except (StopIteration, AttributeError):
+                self.iterator = iter(self.dataloader)
+                batch = next(self.iterator)
+            a = self._compute_dist(batch, device)
+            if self.norm == 'inf':
+                loss = torch.max(a)
+            else:
+                loss = torch.mean(a**self.norm)
+        if self.root != 1.0:
+            loss = loss**(1/self.root)
+        return loss
+
+
+
+
+
+
+###############################################################################################
 
 class ParameterCondition(Condition):
     """
