@@ -225,8 +225,8 @@ class DataCondition_mean(Condition):
             model_out = self.constrain_fn({**model_out.coordinates, **x.coordinates})
         else:
             model_out = model_out.as_tensor
-        model_out=model_out.mean(dim=0)
-        return torch.abs(model_out[list_dims] - y.as_tensor[0])
+        model_out=model_out.mean(dim=1)
+        return torch.abs(model_out[0][list_dims] - y.as_tensor[0])
 
     def forward(self, device='cpu', iteration=None):
         if self.use_full_dataset:
