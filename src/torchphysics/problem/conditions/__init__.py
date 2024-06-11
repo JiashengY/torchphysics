@@ -10,6 +10,8 @@ A tutorial on the usage of Conditions can be found here_.
 from .condition import (Condition,
                         PINNCondition,
                         DataCondition,
+                        DataCondition_mean,
+                        DataCondition_rms,
                         DeepRitzCondition,
                         ParameterCondition,
                         MeanCondition,
