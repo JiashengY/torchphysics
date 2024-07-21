@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 from .problem.spaces.points import Points
+from torch.utils.tensorboard import SummaryWriter
 
 class OptimizerSetting:
     """
@@ -308,8 +309,11 @@ class PIAN_Solver(pl.LightningModule):
                  GAN_weight=1000,
                  rand_size=20,
                  rand_bound=3.6,
-                 N_Profile_points=20):######################################################################
+                 N_Profile_points=20,
+                 Log_dir="runs/"):######################################################################
         super().__init__()
+        self.writer_loss=SummaryWriter(Log_dir)
+        self.writer_generator=SummaryWriter(Log_dir)
         self.co_sys=co_sys
         self.GAN_weight=GAN_weight
         self.rand_size=rand_size
@@ -418,6 +422,7 @@ class PIAN_Solver(pl.LightningModule):
                     for condition in [self.train_conditions[j] for j in train_conditions_index]:
                         cond_loss =  condition(device=self.device, iteration=self.n_training_step)
                         self.log(f'train/{condition.name}', cond_loss)
+                        self.writer_loss(f'train/{condition.name}', cond_loss)
                         loss = loss + condition.base_weight*cond_loss
                         #self.train_conditions[i].weight=1
                         self.list_cond_loss_his_init.append(cond_loss)
@@ -430,6 +435,8 @@ class PIAN_Solver(pl.LightningModule):
                         self.log(f'train/{condition.name}', cond_loss)
                         loss = loss + condition.weight*cond_loss
                         list_cond_loss.append(cond_loss)
+                        if self.n_training_step%100<=5:
+                            self.writer_loss(f'train/{condition.name}', cond_loss)
                     if self.weight_tunning & (self.n_training_step%self.nsteps==0):
                         self._ReLoBRALO(list_cond_loss,train_conditions_index)
                 self.list_cond_loss_his=list_cond_loss
@@ -442,6 +449,8 @@ class PIAN_Solver(pl.LightningModule):
                 y=torch.ones(positions.size(1),1)
                 g_loss=self.adversarial_loss(y_hat,y)
                 self.log('train/G_loss', g_loss)
+                if self.n_training_step%100<=5:
+                    self.writer_loss('train/G_loss', g_loss)
                 loss=loss+self.GAN_weight*g_loss
                 self.log("train/model_loss",loss)
             #if self.n_training_step%1000==0:
@@ -456,6 +465,8 @@ class PIAN_Solver(pl.LightningModule):
                 fake_loss=self.adversarial_loss(y_hat_fake,y_fake)
                 d_loss=(real_loss+fake_loss)/2
                 self.log('train/D_loss', d_loss)
+                if self.n_training_step%100<=5:
+                    self.writer_loss('train/D_loss', d_loss)
                 loss=loss+self.GAN_weight*d_loss
             return loss
         
@@ -470,6 +481,8 @@ class PIAN_Solver(pl.LightningModule):
                     for condition in self.train_conditions:
                         cond_loss =  condition(device=self.device, iteration=self.n_training_step)
                         self.log(f'train/{condition.name}', cond_loss)
+                        if self.n_training_step%100<=5:
+                            self.writer_loss(f'train/{condition.name}', cond_loss)
                         loss = loss + condition.base_weight*cond_loss
                         self.list_cond_loss_his_init.append(cond_loss)
                         self.list_cond_loss_his=self.list_cond_loss_his_init
@@ -479,6 +492,8 @@ class PIAN_Solver(pl.LightningModule):
                     for condition in self.train_conditions:
                         cond_loss =  condition(device=self.device, iteration=self.n_training_step)
                         self.log(f'train/{condition.name}', cond_loss)
+                        if self.n_training_step%100<=5:
+                            self.writer_loss(f'train/{condition.name}', cond_loss)
                         loss = loss + condition.weight*cond_loss
                         list_cond_loss.append(cond_loss)
                 #if self.weight_tunning & ((self.n_training_step-n_step_init)%(self.nsteps*10))==0:
@@ -496,6 +511,8 @@ class PIAN_Solver(pl.LightningModule):
                 y=torch.ones(positions.size(1),1)
                 g_loss=self.adversarial_loss(y_hat,y)
                 self.log('train/G_loss', g_loss)
+                if self.n_training_step%100<=5:
+                    self.writer_loss('train/G_loss', g_loss)
                 loss=loss+self.GAN_weight*g_loss
                 self.log("train/model_loss",loss)
             #if self.n_training_step%1000==0:
@@ -509,6 +526,8 @@ class PIAN_Solver(pl.LightningModule):
                 fake_loss=self.adversarial_loss(y_hat_fake,y_fake)
                 d_loss=(real_loss+fake_loss)/2
                 self.log('train/D_loss', d_loss)
+                if self.n_training_step%100<=5:
+                    self.writer_loss('train/D_loss', d_loss)
                 loss=loss+self.GAN_weight*d_loss
             return loss
         
@@ -525,6 +544,8 @@ class PIAN_Solver(pl.LightningModule):
                 for condition in [self.train_conditions[j] for j in train_conditions_index]:
                     cond_loss =  condition(device=self.device, iteration=self.n_training_step)
                     self.log(f'train/{condition.name}', cond_loss)
+                    if self.n_training_step%100<=5:
+                        self.writer_loss(f'train/{condition.name}', cond_loss)
                     loss = loss + condition.base_weight*cond_loss
                     self.list_cond_loss_his_init.append(cond_loss)
                     self.list_cond_loss_his=self.list_cond_loss_his_init
@@ -534,6 +555,8 @@ class PIAN_Solver(pl.LightningModule):
                 for condition in [self.train_conditions[j] for j in train_conditions_index]:
                     cond_loss =  condition(device=self.device, iteration=self.n_training_step)
                     self.log(f'train/{condition.name}', cond_loss)
+                    if self.n_training_step%100<=5:
+                        self.writer_loss(f'train/{condition.name}', cond_loss)
                     loss = loss + condition.weight*cond_loss
                     list_cond_loss.append(cond_loss)
             #if self.weight_tunning & ((n_step_init-self.n_training_step)%(self.nsteps*10)==0):
@@ -551,6 +574,8 @@ class PIAN_Solver(pl.LightningModule):
             y=torch.ones(positions.size(1),1)
             g_loss=self.adversarial_loss(y_hat,y)
             self.log('train/G_loss', g_loss)
+            if self.n_training_step%100<=5:
+                self.writer_loss(f'train/G_loss', g_loss)
             loss=loss+self.GAN_weight*g_loss
             self.log("train/model_loss",loss)
             #if self.n_training_step%1000==0:
@@ -564,6 +589,8 @@ class PIAN_Solver(pl.LightningModule):
             fake_loss=self.adversarial_loss(y_hat_fake,y_fake)
             d_loss=(real_loss+fake_loss)/2
             self.log('train/D_loss', d_loss)
+            if self.n_training_step%100<=5:
+                self.writer_loss(f'train/D_loss', d_loss)
             loss=loss+self.GAN_weight*d_loss
         return loss
 
