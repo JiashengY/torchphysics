@@ -18,7 +18,11 @@ from .condition import (Condition,
                         AdaptiveWeightsCondition,
                         SingleModuleCondition,
                         PeriodicCondition,
-                        IntegroPINNCondition)
+                        IntegroPINNCondition,
+                        DataCondition_CNN,
+                        PINNCondition_CNN,
+                        SingleModuleCondition_CNN,
+                        PeriodicCondition_CNN)
 
 from .deeponet_condition import (DeepONetSingleModuleCondition, 
                                  PIDeepONetCondition, 

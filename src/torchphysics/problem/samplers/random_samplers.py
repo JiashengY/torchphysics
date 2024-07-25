@@ -308,3 +308,7 @@ class AdaptiveRandomRejectionSampler(AdaptiveSampler):
             filter_tensor = unreduced_loss < min_l + (max_l-min_l)*torch.rand_like(unreduced_loss)
             self.last_points._t[filter_tensor,:] = new_points._t[filter_tensor,:]
         return self.last_points
+
+
+
+
