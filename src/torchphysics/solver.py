@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 from .problem.spaces.points import Points
+import matplotlib.pyplot as plt
 from torch.utils.tensorboard import SummaryWriter
 from random import sample
 import time
@@ -935,6 +936,7 @@ class PIAN_Solver_CNN(pl.LightningModule):
                  co_sys,
                  disc_space,
                  dist_repository,
+                 dist_repository_low,
                  val_conditions=(),
                  optimizer_setting_G=OptimizerSetting(torch.optim.Adam,
                                                     1e-3),
@@ -977,9 +979,17 @@ class PIAN_Solver_CNN(pl.LightningModule):
         self.train_conditions = nn.ModuleList(train_conditions)
         self.val_conditions = nn.ModuleList(val_conditions)
         self.repo=dist_repository
+        self.repo_low=dist_repository_low
         ############################## Modified JY ######################################
         eta=torch.cos(torch.pi*(torch.tensor([i for i in range(self.N_y)]))/(self.N_y)) 
-        self.ys=(1-eta.detach())
+        ys=(1-eta.detach())
+        self.ymesh=ys.reshape((1,1,1,-1)).expand((self.N_dist,1,self.N_x,-1))
+        ## produce CNN coordinates
+        with torch.no_grad():
+            list_x,list_y=torch.meshgrid(torch.linspace(0,self.L_x,self.N_x),ys)
+            list_x=list_x.reshape((-1,1))
+            list_y=list_y.reshape((-1,1))
+            self.coords = torch.tensor(torch.concat((list_x,list_y),axis=1).expand((self.N_dist,self.N_x*self.N_y,2)).reshape((self.N_x*self.N_y*self.N_dist,2)),dtype=torch.float32)
         self.loss_function_schedule=loss_function_schedule
         self.weight_tunning=weight_tunning
         if self.weight_tunning:
@@ -1074,7 +1084,7 @@ class PIAN_Solver_CNN(pl.LightningModule):
                     for condition in [self.train_conditions[j] for j in train_conditions_index]:
                         cond_loss =  condition(device=self.device, iteration=self.n_training_step)
                         self.log(f'train/{condition.name}', cond_loss)
-                        self.writer_loss(f'train/{condition.name}', cond_loss)
+                        #self.writer_loss(f'train/{condition.name}', cond_loss)
                         loss = loss + condition.base_weight*cond_loss
                         #self.train_conditions[i].weight=1
                         self.list_cond_loss_his_init.append(cond_loss)
@@ -1087,8 +1097,8 @@ class PIAN_Solver_CNN(pl.LightningModule):
                         self.log(f'train/{condition.name}', cond_loss)
                         loss = loss + condition.weight*cond_loss
                         list_cond_loss.append(cond_loss)
-                        if self.n_training_step%100<=5:
-                            self.writer_loss(f'train/{condition.name}', cond_loss)
+                        #if self.n_training_step%100<=5:
+                            #self.writer_loss(f'train/{condition.name}', cond_loss)
                     if self.weight_tunning & (self.n_training_step%self.nsteps==0):
                         self._ReLoBRALO(list_cond_loss,train_conditions_index)
                 self.list_cond_loss_his=list_cond_loss
@@ -1096,29 +1106,29 @@ class PIAN_Solver_CNN(pl.LightningModule):
                 self.n_training_step += 1
                 positions=sample(range(len(self.repo)),self.N_dist)
                 #####generator
-                fake_profiles=self(self.repo[positions,:])  #######20 : random profiles
+                fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:])  #######N_dist : random profiles
                 y_hat=self.discriminator(fake_profiles)
-                y=torch.ones(positions.size(1),1)
+                y=torch.ones(len(positions),1)
                 g_loss=self.adversarial_loss(y_hat,y)
                 self.log('train/G_loss', g_loss)
-                if self.n_training_step%100<=5:
-                    self.writer_loss('train/G_loss', g_loss)
+                #if self.n_training_step%100<=5:
+                    #self.writer_loss('train/G_loss', g_loss)
                 loss=loss+self.GAN_weight*g_loss
                 self.log("train/model_loss",loss)
             #if self.n_training_step%1000==0:
                 #self._baseweight_tunner()
             elif optimizer_idx==1:
-                positions=torch.rand(1,self.rand_size)*self.rand_bound
+                positions=sample(range(len(self.repo)),self.N_dist)
                 y_hat_real=self.discriminator(real_profiles)
-                y_real=torch.ones(real_profiles.size(0),1)
+                y_real=torch.ones(real_profiles.shape[0],1)
                 real_loss=self.adversarial_loss(y_hat_real,y_real)
-                y_hat_fake=self.discriminator(self(positions).detach())
-                y_fake=torch.zeros(positions.size(1),1)
+                y_hat_fake=self.discriminator(self(self.repo[positions,:],self.repo_low[positions,:]).detach())
+                y_fake=torch.zeros(len(positions),1)
                 fake_loss=self.adversarial_loss(y_hat_fake,y_fake)
                 d_loss=(real_loss+fake_loss)/2
                 self.log('train/D_loss', d_loss)
-                if self.n_training_step%100<=5:
-                    self.writer_loss('train/D_loss', d_loss)
+                #if self.n_training_step%100<=5:
+                    #self.writer_loss('train/D_loss', d_loss)
                 loss=loss+self.GAN_weight*d_loss
             return loss
         
@@ -1133,8 +1143,8 @@ class PIAN_Solver_CNN(pl.LightningModule):
                     for condition in self.train_conditions:
                         cond_loss =  condition(device=self.device, iteration=self.n_training_step)
                         self.log(f'train/{condition.name}', cond_loss)
-                        if self.n_training_step%100<=5:
-                            self.writer_loss(f'train/{condition.name}', cond_loss)
+                        #if self.n_training_step%100<=5:
+                            #self.writer_loss(f'train/{condition.name}', cond_loss)
                         loss = loss + condition.base_weight*cond_loss
                         self.list_cond_loss_his_init.append(cond_loss)
                         self.list_cond_loss_his=self.list_cond_loss_his_init
@@ -1144,8 +1154,8 @@ class PIAN_Solver_CNN(pl.LightningModule):
                     for condition in self.train_conditions:
                         cond_loss =  condition(device=self.device, iteration=self.n_training_step)
                         self.log(f'train/{condition.name}', cond_loss)
-                        if self.n_training_step%100<=5:
-                            self.writer_loss(f'train/{condition.name}', cond_loss)
+                        #if self.n_training_step%100<=5:
+                            #self.writer_loss(f'train/{condition.name}', cond_loss)
                         loss = loss + condition.weight*cond_loss
                         list_cond_loss.append(cond_loss)
                 #if self.weight_tunning & ((self.n_training_step-n_step_init)%(self.nsteps*10))==0:
@@ -1156,30 +1166,31 @@ class PIAN_Solver_CNN(pl.LightningModule):
                 self.log('train/PINN_loss', loss)
                 self.n_training_step += 1
             
-                positions=torch.rand(1,self.rand_size)*self.rand_bound
+                positions=sample(range(len(self.repo)),self.N_dist)
                 #####generator
-                fake_profiles=self(positions)  #######20 : random profiles
+                fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:])  
                 y_hat=self.discriminator(fake_profiles)
-                y=torch.ones(positions.size(1),1)
+                y=torch.ones(len(positions),1)
                 g_loss=self.adversarial_loss(y_hat,y)
                 self.log('train/G_loss', g_loss)
-                if self.n_training_step%100<=5:
-                    self.writer_loss('train/G_loss', g_loss)
+                #if self.n_training_step%100<=5:
+                   # self.writer_loss('train/G_loss', g_loss)
                 loss=loss+self.GAN_weight*g_loss
                 self.log("train/model_loss",loss)
             #if self.n_training_step%1000==0:
                 #self._baseweight_tunner()
             if optimizer_idx==1:
+                positions=sample(range(len(self.repo)),self.N_dist)
                 y_hat_real=self.discriminator(real_profiles)
-                y_real=torch.ones(real_profiles.size(0),1)
+                y_real=torch.ones(real_profiles.shape[0],1)
                 real_loss=self.adversarial_loss(y_hat_real,y_real)
-                y_hat_fake=self.discriminator(self(positions).detach())
-                y_fake=torch.zeros(positions.size(1),1)
+                y_hat_fake=self.discriminator(self(self.repo[positions,:],self.repo_low[positions,:]).detach())
+                y_fake=torch.zeros(len(positions),1)
                 fake_loss=self.adversarial_loss(y_hat_fake,y_fake)
                 d_loss=(real_loss+fake_loss)/2
                 self.log('train/D_loss', d_loss)
-                if self.n_training_step%100<=5:
-                    self.writer_loss('train/D_loss', d_loss)
+                #if self.n_training_step%100<=5:
+                    #self.writer_loss('train/D_loss', d_loss)
                 loss=loss+self.GAN_weight*d_loss
             return loss
         
@@ -1196,8 +1207,8 @@ class PIAN_Solver_CNN(pl.LightningModule):
                 for condition in [self.train_conditions[j] for j in train_conditions_index]:
                     cond_loss =  condition(device=self.device, iteration=self.n_training_step)
                     self.log(f'train/{condition.name}', cond_loss)
-                    if self.n_training_step%100<=5:
-                        self.writer_loss(f'train/{condition.name}', cond_loss)
+                    #if self.n_training_step%100<=5:
+                        #self.writer_loss(f'train/{condition.name}', cond_loss)
                     loss = loss + condition.base_weight*cond_loss
                     self.list_cond_loss_his_init.append(cond_loss)
                     self.list_cond_loss_his=self.list_cond_loss_his_init
@@ -1207,8 +1218,8 @@ class PIAN_Solver_CNN(pl.LightningModule):
                 for condition in [self.train_conditions[j] for j in train_conditions_index]:
                     cond_loss =  condition(device=self.device, iteration=self.n_training_step)
                     self.log(f'train/{condition.name}', cond_loss)
-                    if self.n_training_step%100<=5:
-                        self.writer_loss(f'train/{condition.name}', cond_loss)
+                    #if self.n_training_step%100<=5:
+                        #self.writer_loss(f'train/{condition.name}', cond_loss)
                     loss = loss + condition.weight*cond_loss
                     list_cond_loss.append(cond_loss)
             #if self.weight_tunning & ((n_step_init-self.n_training_step)%(self.nsteps*10)==0):
@@ -1219,30 +1230,31 @@ class PIAN_Solver_CNN(pl.LightningModule):
             self.log('train/PINN_loss', loss)
             self.n_training_step += 1
         
-            positions=torch.rand(1,self.rand_size)*self.rand_bound
+            positions=sample(range(len(self.repo)),self.N_dist)
                 #####generator
-            fake_profiles=self(positions)  #######20 : random profiles
+            fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:])   #######20 : random profiles
             y_hat=self.discriminator(fake_profiles)
-            y=torch.ones(positions.size(1),1)
+            y=torch.ones(len(positions),1)
             g_loss=self.adversarial_loss(y_hat,y)
             self.log('train/G_loss', g_loss)
-            if self.n_training_step%100<=5:
-                self.writer_loss(f'train/G_loss', g_loss)
+            #if self.n_training_step%100<=5:
+                #self.writer_loss(f'train/G_loss', g_loss)
             loss=loss+self.GAN_weight*g_loss
             self.log("train/model_loss",loss)
             #if self.n_training_step%1000==0:
                 #self._baseweight_tunner()
         if optimizer_idx==1:
+            positions=sample(range(len(self.repo)),self.N_dist)
             y_hat_real=self.discriminator(real_profiles)
-            y_real=torch.ones(real_profiles.size(0),1)
+            y_real=torch.ones(real_profiles.shape[0],1)
             real_loss=self.adversarial_loss(y_hat_real,y_real)
-            y_hat_fake=self.discriminator(self(positions).detach())
-            y_fake=torch.zeros(positions.size(1),1)
+            y_hat_fake=self.discriminator(self(self.repo[positions,:],self.repo_low[positions,:]).detach())
+            y_fake=torch.zeros(len(positions),1)
             fake_loss=self.adversarial_loss(y_hat_fake,y_fake)
             d_loss=(real_loss+fake_loss)/2
             self.log('train/D_loss', d_loss)
-            if self.n_training_step%100<=5:
-                self.writer_loss(f'train/D_loss', d_loss)
+            #if self.n_training_step%100<=5:
+                #self.writer_loss(f'train/D_loss', d_loss)
             loss=loss+self.GAN_weight*d_loss
         return loss
 
@@ -1287,22 +1299,17 @@ class PIAN_Solver_CNN(pl.LightningModule):
         return [optimizer_G,optimizer_D], [lr_scheduler_G,lr_scheduler_D]
 
     def construct_mask(self,dist_1d):
-        ymesh=self.ys
-        ymesh=ymesh.reshape((1,1,1,-1)).expand((1,1,self.N_x,-1))
-        matrix_mask=(dist_1d.reshape((1,1,self.N_x,1))< ymesh)|(dist_1d.reshape((1,1,self.N_x,self.N_y))> (2- ymesh)) ### roughness:True void:False
-        return matrix_mask.long()
-    def forward(self,dist):
+        matrix_mask=(dist_1d.reshape((self.N_dist,1,self.N_x,1))> self.ymesh).long()+(dist_1d.reshape((self.N_dist,1,self.N_x,1))> (2- self.ymesh)).long() ### roughness:True void:False
+        return matrix_mask
+    def forward(self,dist,dist_low):
         #ys=np.linspace(0,2,self.N_points)
-        with torch.no_grad():
-            list_x,list_y=torch.meshgrid(torch.linspace(0,self.L_x,self.N_x),self.ys)
-            list_x=list_x.reshape((-1,1))
-            list_y=list_y.reshape((-1,1))
-            coords = torch.float32(torch.concat((list_x,list_y),axis=1))
-        output=torch.zeros((len(dist)),self.disc_space.dim+1,self.N_x,self.N_y)
-        for i in range(len(dist)):
-            output[i,0:self.disc_space.dim,:,:]=self.generator(dist[i].expand(len(self.N_x*self.N_y),-1),Points(coords, self.co_sys)).reshape((self.disc_space.dim,self.N_y,self.N_x).transpose((0,2,1)))
-            output[i,self.disc_space.dim+1,:,:]=self.construct_mask(dist[i])
-        return output
+        #output=torch.zeros((len(dist)),self.disc_space.dim+1,self.N_x,self.N_y)
+        dist_input=dist.expand(self.N_x*self.N_y,self.N_dist,1,dist.shape[2]).transpose(1,0).reshape((-1,1,dist.shape[2]))
+        output=torch.permute(self.generator(dist_input,Points(self.coords, self.co_sys)).as_tensor[:,0:5].reshape((self.N_dist,self.N_x,self.N_y,5)),(0,3,1,2))
+        #for i in range(len(dist)):
+        #    output[i,0:self.disc_space.dim,:,:]=self.generator(dist[i].expand(len(self.N_x*self.N_y),-1),Points(self.coords, self.co_sys)).reshape((self.disc_space.dim,self.N_y,self.N_x).transpose((0,2,1)))
+        #output=torch.cat(output,self.construct_mask(dist),1)
+        return torch.cat((output,self.construct_mask(dist_low)),1)
     
     def adversarial_loss(self,y_hat,y):
         return nn.functional.binary_cross_entropy(y_hat,y)
