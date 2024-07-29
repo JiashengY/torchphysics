@@ -5,7 +5,7 @@ from .problem import samplers
 from .problem import conditions
 from .models import *
 from .utils import *
-from .solver import Solver, OptimizerSetting,PIAN_Solver
+from .solver import Solver, OptimizerSetting,PIAN_Solver,PIAN_Solver_CNN_Wasserstein
 
 if sys.version_info[:2] >= (3, 8):
     # TODO: Import directly (no need for conditional) when `python_requires = >= 3.8`
