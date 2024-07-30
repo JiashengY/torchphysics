@@ -1517,6 +1517,16 @@ class PIAN_Solver_CNN_Wasserstein(pl.LightningModule):
                 positions=sample(range(len(self.repo)),self.N_dist)
                 #####generator
                 fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:])  #######N_dist : random profiles
+                if self.n_training_step%10==0:
+                    plt.contourf(fake_profiles[0,0,:,:],levels=10,origin="lower")
+                    plt.savefig(f"U_snapshot_{self.n_training_step}.png")
+                    plt.close()
+                    plt.contourf(fake_profiles[0,2,:,:],levels=10,origin="lower")
+                    plt.savefig(f"urms_snapshot_{self.n_training_step}.png")
+                    plt.close()
+                    plt.contourf(fake_profiles[0,4,:,:],levels=10,origin="lower")
+                    plt.savefig(f"uv_snapshot_{self.n_training_step}.png")
+                    plt.close()
                 y_hat=self.discriminator(fake_profiles)
                 #y=torch.ones(len(positions),1)
                 g_loss=-y_hat.mean()
@@ -1595,16 +1605,18 @@ class PIAN_Solver_CNN_Wasserstein(pl.LightningModule):
             #if self.n_training_step%1000==0:
                 #self._baseweight_tunner()
             if optimizer_idx>=1:
-                #print(f"optimizing critic step {optimizer_idx}")
                 positions=sample(range(len(self.repo)),self.N_dist)
                 y_hat_real=self.discriminator(real_profiles)
                 #y_real=torch.ones(real_profiles.shape[0],1)
                 real_loss=y_hat_real.mean()
-                y_hat_fake=self.discriminator(self(self.repo[positions,:],self.repo_low[positions,:]).detach())
+                fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:]).detach()
+                y_hat_fake=self.discriminator(fake_profiles)
                 #y_fake=torch.zeros(len(positions),1)
                 fake_loss=y_hat_fake.mean()
-                d_loss=-(real_loss-fake_loss)/2
-                self.log('train/D_loss', d_loss)
+                gradient_penalty = self._gradient_penalty(real_profiles, fake_profiles)
+                self.log('train/GP_loss', gradient_penalty)
+                d_loss=-(real_loss-fake_loss)/2+gradient_penalty
+                self.log('train/D_loss', -(real_loss-fake_loss)/2)
                 #if self.n_training_step%100<=5:
                     #self.writer_loss('train/D_loss', d_loss)
                 loss=loss+self.GAN_weight*d_loss
@@ -1664,13 +1676,16 @@ class PIAN_Solver_CNN_Wasserstein(pl.LightningModule):
             y_hat_real=self.discriminator(real_profiles)
             #y_real=torch.ones(real_profiles.shape[0],1)
             real_loss=y_hat_real.mean()
-            y_hat_fake=self.discriminator(self(self.repo[positions,:],self.repo_low[positions,:]).detach())
+            fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:]).detach()
+            y_hat_fake=self.discriminator(fake_profiles)
             #y_fake=torch.zeros(len(positions),1)
             fake_loss=y_hat_fake.mean()
-            d_loss=-(real_loss-fake_loss)/2
-            self.log('train/D_loss', d_loss)
-            #if self.n_training_step%100<=5:
-                #self.writer_loss(f'train/D_loss', d_loss)
+            gradient_penalty = self._gradient_penalty(real_profiles, fake_profiles)
+            self.log('train/GP_loss', gradient_penalty)
+            d_loss=-(real_loss-fake_loss)/2+gradient_penalty
+            self.log('train/D_loss', -(real_loss-fake_loss)/2)
+                #if self.n_training_step%100<=5:
+                    #self.writer_loss('train/D_loss', d_loss)
             loss=loss+self.GAN_weight*d_loss
         return loss
 
