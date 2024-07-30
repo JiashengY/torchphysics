@@ -3,6 +3,8 @@ import warnings
 import torch
 import torch.nn as nn
 import pytorch_lightning as pl
+from torch.autograd import Variable
+from torch.autograd import grad as torch_grad
 from .problem.spaces.points import Points
 import matplotlib.pyplot as plt
 from torch.utils.tensorboard import SummaryWriter
@@ -1364,6 +1366,7 @@ class PIAN_Solver_CNN_Wasserstein(pl.LightningModule):
                  N_x=300, ####### n points in x direction for generator
                  N_y=150, ####### n points in y direction for generator
                  N_iter_discriminator=5,
+                 gp_weight=10,
                  Log_dir="runs/"):######################################################################
         super().__init__()
         self.writer_loss=SummaryWriter(Log_dir)
@@ -1380,6 +1383,7 @@ class PIAN_Solver_CNN_Wasserstein(pl.LightningModule):
         #############################
         self.discriminator=discriminator
         self.disc_space=disc_space
+        self.gp_weight=gp_weight
         self.optimizer_setting_D = optimizer_setting_D
         self.sub_iter_discriminator=N_iter_discriminator
         self.train_conditions = nn.ModuleList(train_conditions)
@@ -1515,7 +1519,7 @@ class PIAN_Solver_CNN_Wasserstein(pl.LightningModule):
                 fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:])  #######N_dist : random profiles
                 y_hat=self.discriminator(fake_profiles)
                 #y=torch.ones(len(positions),1)
-                g_loss=-y_hat
+                g_loss=-y_hat.mean()
                 self.log('train/G_loss', g_loss)
                 #if self.n_training_step%100<=5:
                     #self.writer_loss('train/G_loss', g_loss)
@@ -1524,15 +1528,20 @@ class PIAN_Solver_CNN_Wasserstein(pl.LightningModule):
             #if self.n_training_step%1000==0:
                 #self._baseweight_tunner()
             elif optimizer_idx>=1:
+                #print(f"optimizing critic step {optimizer_idx}")
+
                 positions=sample(range(len(self.repo)),self.N_dist)
                 y_hat_real=self.discriminator(real_profiles)
                 #y_real=torch.ones(real_profiles.shape[0],1)
-                real_loss=y_hat_real
-                y_hat_fake=self.discriminator(self(self.repo[positions,:],self.repo_low[positions,:]).detach())
+                real_loss=y_hat_real.mean()
+                fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:]).detach()
+                y_hat_fake=self.discriminator(fake_profiles)
                 #y_fake=torch.zeros(len(positions),1)
-                fake_loss=y_hat_fake
-                d_loss=-(real_loss-fake_loss)/2
-                self.log('train/D_loss', d_loss)
+                fake_loss=y_hat_fake.mean()
+                gradient_penalty = self._gradient_penalty(real_profiles, fake_profiles)
+                self.log('train/GP_loss', gradient_penalty)
+                d_loss=-(real_loss-fake_loss)/2+gradient_penalty
+                self.log('train/D_loss', -(real_loss-fake_loss)/2)
                 #if self.n_training_step%100<=5:
                     #self.writer_loss('train/D_loss', d_loss)
                 loss=loss+self.GAN_weight*d_loss
@@ -1577,7 +1586,7 @@ class PIAN_Solver_CNN_Wasserstein(pl.LightningModule):
                 fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:])  
                 y_hat=self.discriminator(fake_profiles)
                 #y=torch.ones(len(positions),1)
-                g_loss=-y_hat
+                g_loss=-y_hat.mean()
                 self.log('train/G_loss', g_loss)
                 #if self.n_training_step%100<=5:
                    # self.writer_loss('train/G_loss', g_loss)
@@ -1586,13 +1595,14 @@ class PIAN_Solver_CNN_Wasserstein(pl.LightningModule):
             #if self.n_training_step%1000==0:
                 #self._baseweight_tunner()
             if optimizer_idx>=1:
+                #print(f"optimizing critic step {optimizer_idx}")
                 positions=sample(range(len(self.repo)),self.N_dist)
                 y_hat_real=self.discriminator(real_profiles)
                 #y_real=torch.ones(real_profiles.shape[0],1)
-                real_loss=y_hat_real
+                real_loss=y_hat_real.mean()
                 y_hat_fake=self.discriminator(self(self.repo[positions,:],self.repo_low[positions,:]).detach())
                 #y_fake=torch.zeros(len(positions),1)
-                fake_loss=y_hat_fake
+                fake_loss=y_hat_fake.mean()
                 d_loss=-(real_loss-fake_loss)/2
                 self.log('train/D_loss', d_loss)
                 #if self.n_training_step%100<=5:
@@ -1641,7 +1651,7 @@ class PIAN_Solver_CNN_Wasserstein(pl.LightningModule):
             fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:])   #######20 : random profiles
             y_hat=self.discriminator(fake_profiles)
             #y=torch.ones(len(positions),1)
-            g_loss=-y_hat
+            g_loss=-y_hat.mean()
             self.log('train/G_loss', g_loss)
             #if self.n_training_step%100<=5:
                 #self.writer_loss(f'train/G_loss', g_loss)
@@ -1653,10 +1663,10 @@ class PIAN_Solver_CNN_Wasserstein(pl.LightningModule):
             positions=sample(range(len(self.repo)),self.N_dist)
             y_hat_real=self.discriminator(real_profiles)
             #y_real=torch.ones(real_profiles.shape[0],1)
-            real_loss=y_hat_real
+            real_loss=y_hat_real.mean()
             y_hat_fake=self.discriminator(self(self.repo[positions,:],self.repo_low[positions,:]).detach())
             #y_fake=torch.zeros(len(positions),1)
-            fake_loss=y_hat_fake
+            fake_loss=y_hat_fake.mean()
             d_loss=-(real_loss-fake_loss)/2
             self.log('train/D_loss', d_loss)
             #if self.n_training_step%100<=5:
@@ -1702,7 +1712,7 @@ class PIAN_Solver_CNN_Wasserstein(pl.LightningModule):
                         'monitor': self.optimizer_setting_D.monitor_lr}
         for input_name in self.optimizer_setting_D.scheduler_args:
             lr_scheduler_D[input_name] = self.optimizer_setting_D.scheduler_args[input_name]
-        return [optimizer_G].append([optimizer_D for i in range(self.sub_iter_discriminator)]), [lr_scheduler_G].append([lr_scheduler_D for i in range(self.sub_iter_discriminator)])
+        return [optimizer_G,optimizer_D,optimizer_D,optimizer_D,optimizer_D,optimizer_D], [lr_scheduler_G,lr_scheduler_D,lr_scheduler_D,lr_scheduler_D,lr_scheduler_D,lr_scheduler_D]
 
     def construct_mask(self,dist_1d):
         matrix_mask=(dist_1d.reshape((self.N_dist,1,self.N_x,1))> self.ymesh).long()+(dist_1d.reshape((self.N_dist,1,self.N_x,1))> (2- self.ymesh)).long() ### roughness:True void:False
@@ -1712,13 +1722,44 @@ class PIAN_Solver_CNN_Wasserstein(pl.LightningModule):
         #output=torch.zeros((len(dist)),self.disc_space.dim+1,self.N_x,self.N_y)
         dist_input=dist.expand(self.N_x*self.N_y,self.N_dist,1,dist.shape[2]).transpose(1,0).reshape((-1,1,dist.shape[2]))
         output=torch.permute(self.generator(dist_input,Points(self.coords, self.co_sys)).as_tensor[:,0:5].reshape((self.N_dist,self.N_x,self.N_y,5)),(0,3,1,2))
+        #output=torch.permute(self.generator(dist_input,Points(self.coords, self.co_sys)).as_tensor[:,0:5].reshape((5,self.N_y,self.N_x,self.N_dist)),(3,0,2,1))
         #for i in range(len(dist)):
         #    output[i,0:self.disc_space.dim,:,:]=self.generator(dist[i].expand(len(self.N_x*self.N_y),-1),Points(self.coords, self.co_sys)).reshape((self.disc_space.dim,self.N_y,self.N_x).transpose((0,2,1)))
         #output=torch.cat(output,self.construct_mask(dist),1)
         return torch.cat((output,self.construct_mask(dist_low)),1)
-    
-    def adversarial_loss(self,y_hat,y):
-        return nn.functional.binary_cross_entropy(y_hat,y)
-    
+
     
 
+    def _gradient_penalty(self, real_data, generated_data):
+        N_case = real_data.size()[0]
+
+        # Calculate interpolation
+        alpha = torch.rand(N_case, 1, 1, 1)
+        alpha = alpha.expand_as(real_data)
+        #if self.use_cuda:
+        #    alpha = alpha.cuda()
+        interpolated = alpha * real_data.data + (1 - alpha) * generated_data.data
+        interpolated = Variable(interpolated, requires_grad=True)
+        #if self.use_cuda:
+        #    interpolated = interpolated.cuda()
+
+        # Calculate probability of interpolated examples
+        prob_interpolated = self.discriminator(interpolated)
+
+        # Calculate gradients of probabilities with respect to examples
+        gradients = torch_grad(outputs=prob_interpolated, inputs=interpolated,
+                               grad_outputs=#torch.ones(prob_interpolated.size()).cuda() if self.use_cuda else 
+                               torch.ones(prob_interpolated.size()),
+                               create_graph=True, retain_graph=True)[0]
+
+        # Gradients have shape (batch_size, num_channels, img_width, img_height),
+        # so flatten to easily take norm per example in batch
+        gradients = gradients.view(N_case, -1)
+        #self.losses['gradient_norm'].append(gradients.norm(2, dim=1).mean().data[0])
+
+        # Derivatives of the gradient close to 0 can cause problems because of
+        # the square root, so manually calculate norm and add epsilon
+        gradients_norm = torch.sqrt(torch.sum(gradients ** 2, dim=1) + 1e-12)
+
+        # Return gradient penalty
+        return self.gp_weight * ((gradients_norm - 1) ** 2).mean()
