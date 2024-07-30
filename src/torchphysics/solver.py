@@ -1518,13 +1518,13 @@ class PIAN_Solver_CNN_Wasserstein(pl.LightningModule):
                 #####generator
                 fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:])  #######N_dist : random profiles
                 if self.n_training_step%10==0:
-                    plt.contourf(fake_profiles[0,0,:,:],levels=10,origin="lower")
+                    plt.contourf(fake_profiles[0,0,:,:].detach(),levels=10,origin="lower")
                     plt.savefig(f"U_snapshot_{self.n_training_step}.png")
                     plt.close()
-                    plt.contourf(fake_profiles[0,2,:,:],levels=10,origin="lower")
+                    plt.contourf(fake_profiles[0,2,:,:].detach(),levels=10,origin="lower")
                     plt.savefig(f"urms_snapshot_{self.n_training_step}.png")
                     plt.close()
-                    plt.contourf(fake_profiles[0,4,:,:],levels=10,origin="lower")
+                    plt.contourf(fake_profiles[0,4,:,:].detach(),levels=10,origin="lower")
                     plt.savefig(f"uv_snapshot_{self.n_training_step}.png")
                     plt.close()
                 y_hat=self.discriminator(fake_profiles)
