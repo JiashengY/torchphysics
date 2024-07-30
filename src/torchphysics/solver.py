@@ -1517,7 +1517,7 @@ class PIAN_Solver_CNN_Wasserstein(pl.LightningModule):
                 positions=sample(range(len(self.repo)),self.N_dist)
                 #####generator
                 fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:])  #######N_dist : random profiles
-                if self.n_training_step%10==0:
+                if self.n_training_step%1000==0:
                     plt.contourf(fake_profiles[0,0,:,:].detach(),levels=10,origin="lower")
                     plt.savefig(f"U_snapshot_{self.n_training_step}.png")
                     plt.close()
@@ -1595,6 +1595,16 @@ class PIAN_Solver_CNN_Wasserstein(pl.LightningModule):
                 #####generator
                 fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:])  
                 y_hat=self.discriminator(fake_profiles)
+                if self.n_training_step%1000==0:
+                    plt.contourf(fake_profiles[0,0,:,:].detach(),levels=10,origin="lower")
+                    plt.savefig(f"U_snapshot_{self.n_training_step}.png")
+                    plt.close()
+                    plt.contourf(fake_profiles[0,2,:,:].detach(),levels=10,origin="lower")
+                    plt.savefig(f"urms_snapshot_{self.n_training_step}.png")
+                    plt.close()
+                    plt.contourf(fake_profiles[0,4,:,:].detach(),levels=10,origin="lower")
+                    plt.savefig(f"uv_snapshot_{self.n_training_step}.png")
+                    plt.close()
                 #y=torch.ones(len(positions),1)
                 g_loss=-y_hat.mean()
                 self.log('train/G_loss', g_loss)
@@ -1662,6 +1672,16 @@ class PIAN_Solver_CNN_Wasserstein(pl.LightningModule):
                 #####generator
             fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:])   #######20 : random profiles
             y_hat=self.discriminator(fake_profiles)
+            if self.n_training_step%1000==0:
+                plt.contourf(fake_profiles[0,0,:,:].detach(),levels=10,origin="lower")
+                plt.savefig(f"U_snapshot_{self.n_training_step}.png")
+                plt.close()
+                plt.contourf(fake_profiles[0,2,:,:].detach(),levels=10,origin="lower")
+                plt.savefig(f"urms_snapshot_{self.n_training_step}.png")
+                plt.close()
+                plt.contourf(fake_profiles[0,4,:,:].detach(),levels=10,origin="lower")
+                plt.savefig(f"uv_snapshot_{self.n_training_step}.png")
+                plt.close()
             #y=torch.ones(len(positions),1)
             g_loss=-y_hat.mean()
             self.log('train/G_loss', g_loss)
