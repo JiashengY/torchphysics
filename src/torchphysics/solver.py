@@ -1392,7 +1392,7 @@ class PIAN_Solver_CNN_Wasserstein(pl.LightningModule):
         self.repo=dist_repository
         self.repo_low=dist_repository_low
         ############################## Modified JY ######################################
-        eta=torch.cos(torch.pi*(torch.tensor([i for i in range(self.N_y*2)],device=gpu))/(self.N_y*2-1)) 
+        eta=torch.cos(torch.pi*(torch.tensor([i for i in range(self.N_y)],device=gpu))/(self.N_y)) 
         ys=(1-eta.detach())[:self.N_y]
         self.ymesh=ys.reshape((1,1,1,-1)).expand((self.N_dist,1,self.N_x,-1))
         self.ys=ys
@@ -1914,15 +1914,15 @@ class PIAN_Solver_CNN_Wasserstein_LowMem(pl.LightningModule):
         self.repo=dist_repository
         self.repo_low=dist_repository_low
         ############################## Modified JY ######################################
-        eta=torch.cos(torch.pi*(torch.tensor([i for i in range(self.N_y*2)],device=gpu))/(self.N_y*2-1)) 
-        ys=(1-eta.detach())[:self.N_y]
-        self.ymesh=ys.reshape((1,1,1,-1)).expand((self.N_dist,1,self.N_x_sub,-1))
+        eta=torch.cos(torch.pi*(torch.tensor([i for i in range(self.N_y)],device=gpu))/(self.N_y)) 
+        ys=(1-eta.detach())
+        self.ymesh=ys.reshape((1,1,1,-1)).expand((1,1,self.N_x_sub,-1))
         self.ys=ys
         with torch.no_grad():
             meshx,meshy=torch.meshgrid(self.list_x[0:self.N_x_sub],self.ys)
             meshx=meshx.reshape((-1,1))
             meshy=meshy.reshape((-1,1))
-            self.coords = torch.tensor(torch.concat((meshx,meshy),axis=1).expand((self.N_dist,self.N_x_sub*self.N_y,2)).reshape((self.N_x_sub*self.N_y*self.N_dist,2)),dtype=torch.float32,device=self.device)
+            self.coords = torch.tensor(torch.concat((meshx,meshy),axis=1).expand((self.N_dist,self.N_x_sub*self.N_y,2)).reshape((self.N_x_sub*self.N_y*self.N_dist,2)),dtype=torch.float32,device=gpu)
         ## produce CNN coordinates
         
         self.loss_function_schedule=loss_function_schedule
@@ -2039,24 +2039,26 @@ class PIAN_Solver_CNN_Wasserstein_LowMem(pl.LightningModule):
                 self.list_cond_loss_his=list_cond_loss
                 self.log('train/PINN_loss', loss)
                 self.n_training_step += 1
-                positions=sample(range(len(self.repo)),self.N_dist)
+                positions=sample(range(len(self.repo)),self.N_dist)         
+                iX_start=torch.randint(self.N_x-self.N_x_sub-2,(self.N_dist,1),device=self.device)
+
                 #####generator
-                fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:])  #######N_dist : random profiles
+                fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:],iX_start)  #######N_dist : random profiles
                 if self.n_training_step%300==0:
                     plt.figure(figsize=(10,18))
                     plt.contourf(self.ys.cpu(),torch.linspace(0,self.L_x,fake_profiles.shape[2]),fake_profiles[0,0,:,:].detach().cpu(),extent=[0, 2, 0, self.L_x],levels=10,origin="lower")
                     plt.colorbar()
-                    plt.savefig(f"Figs/U_snapshot_{self.n_training_step}.png")
+                    plt.savefig(f"Figs/PIAN_Lowmem/U_snapshot_{self.n_training_step}.png")
                     plt.close()
                     plt.figure(figsize=(10,18))
                     plt.contourf(self.ys.cpu(),torch.linspace(0,self.L_x,fake_profiles.shape[2]),fake_profiles[0,2,:,:].detach().cpu(),extent=[0, 2, 0, self.L_x],levels=10,origin="lower")
                     plt.colorbar()
-                    plt.savefig(f"Figs/urms_snapshot_{self.n_training_step}.png")
+                    plt.savefig(f"Figs/PIAN_Lowmem/urms_snapshot_{self.n_training_step}.png")
                     plt.close()
                     plt.figure(figsize=(10,18))
                     plt.contourf(self.ys.cpu(),torch.linspace(0,self.L_x,fake_profiles.shape[2]),fake_profiles[0,4,:,:].detach().cpu(),extent=[0, 2, 0, self.L_x],levels=10,origin="lower")
                     plt.colorbar()
-                    plt.savefig(f"Figs/uv_snapshot_{self.n_training_step}.png")
+                    plt.savefig(f"Figs/PIAN_Lowmem/uv_snapshot_{self.n_training_step}.png")
                     plt.close()
                 y_hat=self.discriminator(fake_profiles)
                 #y=torch.ones(len(positions),1)
@@ -2072,10 +2074,12 @@ class PIAN_Solver_CNN_Wasserstein_LowMem(pl.LightningModule):
                 #print(f"optimizing critic step {optimizer_idx}")
 
                 positions=sample(range(len(self.repo)),self.N_dist)
+                iX_start=torch.randint(self.N_x-self.N_x_sub-2,(self.N_dist,1),device=self.device)
+
                 y_hat_real=self.discriminator(real_profiles)
                 #y_real=torch.ones(real_profiles.shape[0],1)
                 real_loss=y_hat_real.mean()
-                fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:]).detach()
+                fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:],iX_start).detach()
                 y_hat_fake=self.discriminator(fake_profiles)
                 #y_fake=torch.zeros(len(positions),1)
                 fake_loss=y_hat_fake.mean()
@@ -2122,24 +2126,25 @@ class PIAN_Solver_CNN_Wasserstein_LowMem(pl.LightningModule):
                 self.log('train/PINN_loss', loss)
             
                 positions=sample(range(len(self.repo)),self.N_dist)
+                iX_start=torch.randint(self.N_x-self.N_x_sub-2,(self.N_dist,1),device=self.device)
                 #####generator
-                fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:])  
+                fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:],iX_start)  
                 y_hat=self.discriminator(fake_profiles)
                 if self.n_training_step%300==0:
                     plt.figure(figsize=(10,18))
                     plt.contourf(self.ys.cpu(),torch.linspace(0,self.L_x,fake_profiles.shape[2]),fake_profiles[0,0,:,:].detach().cpu(),extent=[0, 2, 0, self.L_x],levels=10,origin="lower")
                     plt.colorbar()
-                    plt.savefig(f"Figs/U_snapshot_{self.n_training_step}.png")
+                    plt.savefig(f"Figs/PIAN_Lowmem/U_snapshot_{self.n_training_step}.png")
                     plt.close()
                     plt.figure(figsize=(10,18))
                     plt.contourf(self.ys.cpu(),torch.linspace(0,self.L_x,fake_profiles.shape[2]),fake_profiles[0,2,:,:].detach().cpu(),extent=[0, 2, 0, self.L_x],levels=10,origin="lower")
                     plt.colorbar()
-                    plt.savefig(f"Figs/urms_snapshot_{self.n_training_step}.png")
+                    plt.savefig(f"Figs/PIAN_Lowmem/urms_snapshot_{self.n_training_step}.png")
                     plt.close()
                     plt.figure(figsize=(10,18))
                     plt.contourf(self.ys.cpu(),torch.linspace(0,self.L_x,fake_profiles.shape[2]),fake_profiles[0,4,:,:].detach().cpu(),extent=[0, 2, 0, self.L_x],levels=10,origin="lower")
                     plt.colorbar()
-                    plt.savefig(f"Figs/uv_snapshot_{self.n_training_step}.png")
+                    plt.savefig(f"Figs/PIAN_Lowmem/uv_snapshot_{self.n_training_step}.png")
                     plt.close()
                 #y=torch.ones(len(positions),1)
                 self.n_training_step += 1
@@ -2154,10 +2159,11 @@ class PIAN_Solver_CNN_Wasserstein_LowMem(pl.LightningModule):
                 #self._baseweight_tunner()
             if optimizer_idx>=1:
                 positions=sample(range(len(self.repo)),self.N_dist)
+                iX_start=torch.randint(self.N_x-self.N_x_sub-2,(self.N_dist,1),device=self.device)
                 y_hat_real=self.discriminator(real_profiles)
                 #y_real=torch.ones(real_profiles.shape[0],1)
                 real_loss=y_hat_real.mean()
-                fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:]).detach()
+                fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:],iX_start).detach()
                 y_hat_fake=self.discriminator(fake_profiles)
                 #y_fake=torch.zeros(len(positions),1)
                 fake_loss=y_hat_fake.mean()
@@ -2207,24 +2213,25 @@ class PIAN_Solver_CNN_Wasserstein_LowMem(pl.LightningModule):
             self.n_training_step += 1
         
             positions=sample(range(len(self.repo)),self.N_dist)
+            iX_start=torch.randint(self.N_x-self.N_x_sub-2,(self.N_dist,1),device=self.device)
                 #####generator
-            fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:])   #######20 : random profiles
+            fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:],iX_start)   #######20 : random profiles
             y_hat=self.discriminator(fake_profiles)
             if self.n_training_step%300==0:
                 plt.figure(figsize=(10,18))
                 plt.contourf(self.ys.cpu(),torch.linspace(0,self.L_x,fake_profiles.shape[2]),fake_profiles[0,0,:,:].detach().cpu(),extent=[0, 2, 0, self.L_x],levels=10,origin="lower")
                 plt.colorbar()
-                plt.savefig(f"Figs/U_snapshot_{self.n_training_step}.png")
+                plt.savefig(f"Figs/PIAN_Lowmem/U_snapshot_{self.n_training_step}.png")
                 plt.close()
                 plt.figure(figsize=(10,18))
                 plt.contourf(self.ys.cpu(),torch.linspace(0,self.L_x,fake_profiles.shape[2]),fake_profiles[0,2,:,:].detach().cpu(),extent=[0, 2, 0, self.L_x],levels=10,origin="lower")
                 plt.colorbar()
-                plt.savefig(f"Figs/urms_snapshot_{self.n_training_step}.png")
+                plt.savefig(f"Figs/PIAN_Lowmem/urms_snapshot_{self.n_training_step}.png")
                 plt.close()
                 plt.figure(figsize=(10,18))
                 plt.contourf(self.ys.cpu(),torch.linspace(0,self.L_x,fake_profiles.shape[2]),fake_profiles[0,4,:,:].detach().cpu(),extent=[0, 2, 0, self.L_x],levels=10,origin="lower")
                 plt.colorbar()
-                plt.savefig(f"Figs/uv_snapshot_{self.n_training_step}.png")
+                plt.savefig(f"Figs/PIAN_Lowmem/uv_snapshot_{self.n_training_step}.png")
                 plt.close()
             #y=torch.ones(len(positions),1)
             g_loss=-y_hat.mean()
@@ -2237,10 +2244,11 @@ class PIAN_Solver_CNN_Wasserstein_LowMem(pl.LightningModule):
                 #self._baseweight_tunner()
         if optimizer_idx>=1:
             positions=sample(range(len(self.repo)),self.N_dist)
+            iX_start=torch.randint(self.N_x-self.N_x_sub-2,(self.N_dist,1),device=self.device)
             y_hat_real=self.discriminator(real_profiles)
             #y_real=torch.ones(real_profiles.shape[0],1)
             real_loss=y_hat_real.mean()
-            fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:]).detach()
+            fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:],iX_start).detach()
             y_hat_fake=self.discriminator(fake_profiles)
             #y_fake=torch.zeros(len(positions),1)
             fake_loss=y_hat_fake.mean()
@@ -2294,15 +2302,20 @@ class PIAN_Solver_CNN_Wasserstein_LowMem(pl.LightningModule):
         return [optimizer_G,optimizer_D,optimizer_D,optimizer_D,optimizer_D,optimizer_D], [lr_scheduler_G,lr_scheduler_D,lr_scheduler_D,lr_scheduler_D,lr_scheduler_D,lr_scheduler_D]
 
     def construct_mask(self,dist_1d,iX_start):
-        matrix_mask=(dist_1d[iX_start:iX_start+self.N_x_sub].reshape((self.N_dist,1,self.N_x_sub,1))> self.ymesh).long()+(dist_1d.reshape((self.N_dist,1,self.N_x_sub,1))> (2- self.ymesh)).long() ### roughness:True void:False
+        #print(dist_1d[0,0,:],iX_start[0],self.N_x_sub)
+        matrix_mask=(dist_1d[0,0,iX_start[0]:(iX_start[0]+self.N_x_sub)].reshape((1,1,self.N_x_sub,1))> self.ymesh).long()+(dist_1d[0,0,iX_start[0]:(iX_start[0]+self.N_x_sub)].reshape((1,1,self.N_x_sub,1))> (2- self.ymesh)).long()
+        for i in range(1,self.N_dist):
+            matrix_mask=torch.cat((matrix_mask,(dist_1d[i,0,iX_start[i]:(iX_start[i]+self.N_x_sub)].reshape((1,1,self.N_x_sub,1))> self.ymesh).long()+(dist_1d[i,0,iX_start[i]:(iX_start[i]+self.N_x_sub)].reshape((1,1,self.N_x_sub,1))> (2- self.ymesh)).long()),dim=0)
+        #matrix_mask=(dist_1d[iX_start:(iX_start+self.N_x_sub)].reshape((self.N_dist,1,self.N_x_sub,1))> self.ymesh).long()+(dist_1d.reshape((self.N_dist,1,self.N_x_sub,1))> (2- self.ymesh)).long() ### roughness:True void:False
         return matrix_mask
     def forward(self,dist,dist_low,iX_start):
         #ys=np.linspace(0,2,self.N_points)
         #output=torch.zeros((len(dist)),self.disc_space.dim+1,self.N_x,self.N_y)
-        if iX_start<self.N_x-self.N_x_sub:
-            iX_start=self.N_x-self.N_x_sub-2
+        #if iX_start<(self.N_x-self.N_x_sub):
+            #iX_start=self.N_x-self.N_x_sub-2
+        x_start=torch.cat((self.list_x[iX_start].expand((self.N_dist,self.N_x_sub*self.N_y)).reshape((-1,1)),torch.zeros(self.N_dist*self.N_x_sub*self.N_y,1,device=self.device)),dim=1)
         dist_input=dist.expand(self.N_x_sub*self.N_y,self.N_dist,1,dist.shape[2]).transpose(1,0).reshape((-1,1,dist.shape[2]))
-        output=torch.permute(self.generator(dist_input,Points(self.coords+self.list_x[iX_start], self.co_sys)).as_tensor[:,0:5].reshape((self.N_dist,self.N_x,self.N_y,5)),(0,3,1,2))
+        output=torch.permute(self.generator(dist_input,Points(self.coords+x_start, self.co_sys)).as_tensor[:,0:5].reshape((self.N_dist,self.N_x_sub,self.N_y,5)),(0,3,1,2))
         #output=torch.permute(self.generator(dist_input,Points(self.coords, self.co_sys)).as_tensor[:,0:5].reshape((5,self.N_y,self.N_x,self.N_dist)),(3,0,2,1))
         #for i in range(len(dist)):
         #    output[i,0:self.disc_space.dim,:,:]=self.generator(dist[i].expand(len(self.N_x*self.N_y),-1),Points(self.coords, self.co_sys)).reshape((self.disc_space.dim,self.N_y,self.N_x).transpose((0,2,1)))
