@@ -2343,7 +2343,7 @@ class PIAN_Solver_CNN_Wasserstein_LowMem(pl.LightningModule):
         # Calculate interpolation
         alpha = torch.rand(N_case, 1, 1, 1)
         alpha = alpha.expand_as(real_data)
-        generated_data=generated_data.expand_as(real_data)
+        real_data=real_data.expand_as(generated_data)
         if torch.cuda.is_available():
             alpha = alpha.cuda()
         interpolated = alpha * real_data.data + (1 - alpha) * generated_data.data
@@ -2870,7 +2870,7 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
         # Calculate interpolation
         alpha = torch.rand(N_case, 1, 1, 1)
         alpha = alpha.expand_as(real_data)
-        generated_data=generated_data.expand_as(real_data)
+        real_data=real_data.expand_as(generated_data)
 
         if torch.cuda.is_available():
             alpha = alpha.cuda()
