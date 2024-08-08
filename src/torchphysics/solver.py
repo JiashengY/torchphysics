@@ -2002,9 +2002,22 @@ class PIAN_Solver_CNN_Wasserstein_LowMem(pl.LightningModule):
                 self.train_conditions[train_conditions_index[i]].base_weight=10**factor
             #print(i,self.train_conditions[train_conditions_index[i]].base_weight)
 
+    #def _rand_data_mixer(self,data_matrix):
+    #    start_index=torch.randint(self.N_x-self.N_x_sub-2,(1,self.N_dist),device=self.device)
+    #    index_tensor = torch.stack([torch.arange(i, i+self.N_x_sub) for i in start_index[0]])
+    #    index_1d=index_tensor.reshape((1,-1))
+    #    channel_1d=torch.arange(0,6)
+    #    index_mesh,channel_mesh,y_mesh=torch.meshgrid(index_1d,channel_1d,self.ys)
+    #    index_matrix=torch.cat((index_mesh.reshape(1,-1),channel_mesh.reshape(1,-1),y_mesh.reshape(1,-1)),dim=0).reshape(())
+    #    print(index_tensor.shape,data_matrix.shape)
+    #    result = data_matrix.gather(1, index_tensor)
+    #    return result.reshape(self.N_dist,1,self.N_x_sub)
+
 
     def training_step(self, batch, batch_idx,optimizer_idx): ####################### modified JY ################################
         real_profiles,_=batch
+        #start_idx=torch.randint(self.N_x-self.N_x_sub-2,(1,1),device=self.device)
+        real_profiles=real_profiles[:,:,torch.randint(self.N_x-self.N_x_sub-2,(1,1),device=self.device)[0]+self.N_x_sub,:]
         loss = torch.zeros(1, requires_grad=True, device=self.device)
         ######### first set of loss functions #######
         if self.n_training_step<=self.loss_function_schedule[0]["max_iter"]:   
@@ -2529,6 +2542,7 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
 
     def training_step(self, batch, batch_idx,optimizer_idx): ####################### modified JY ################################
         real_profiles,_=batch
+        real_profiles=real_profiles[:,:,torch.randint(self.N_x-self.N_x_sub-2,(1,1),device=self.device)[0]+self.N_x_sub,:]
         loss = torch.zeros(1, requires_grad=True, device=self.device)
         ######### first set of loss functions #######
         if self.n_training_step<=self.loss_function_schedule[0]["max_iter"]:   
