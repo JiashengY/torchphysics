@@ -2343,6 +2343,7 @@ class PIAN_Solver_CNN_Wasserstein_LowMem(pl.LightningModule):
         # Calculate interpolation
         alpha = torch.rand(N_case, 1, 1, 1)
         alpha = alpha.expand_as(real_data)
+        generated_data=generated_data.expand_as(real_data)
         if torch.cuda.is_available():
             alpha = alpha.cuda()
         interpolated = alpha * real_data.data + (1 - alpha) * generated_data.data
@@ -2869,6 +2870,56 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
         # Calculate interpolation
         alpha = torch.rand(N_case, 1, 1, 1)
         alpha = alpha.expand_as(real_data)
+        generated_data=generated_data.expand_as(real_data)
+
+        if torch.cuda.is_available():
+            alpha = alpha.cuda()
+        interpolated = alpha * real_data.data + (1 - alpha) * generated_data.data
+        interpolated = Variable(interpolated, requires_grad=True)
+        if torch.cuda.is_available():
+            interpolated = interpolated.cuda()
+
+        # Calculate probability of interpolated examples
+        prob_interpolated = self.discriminator(interpolated)
+
+        # Calculate gradients of probabilities with respect to examples
+        gradients = torch_grad(outputs=prob_interpolated, inputs=interpolated,
+                               grad_outputs=torch.ones(prob_interpolated.size()).cuda() if torch.cuda.is_available() else torch.ones(prob_interpolated.size()),
+                               create_graph=True, retain_graph=True)[0]
+
+        # Gradients have shape (batch_size, num_channels, img_width, img_height),
+        # so flatten to easily take norm per example in batch
+        gradients = gradients.view(N_case, -1)
+        #self.losses['gradient_norm'].append(gradients.norm(2, dim=1).mean().data[0])
+
+        # Derivatives of the gradient close to 0 can cause problems because of
+        # the square root, so manually calculate norm and add epsilon
+        gradients_norm = torch.sqrt(torch.sum(gradients ** 2, dim=1) + 1e-12)
+
+        # Return gradient penalty
+        return self.gp_weight * ((gradients_norm - 1) ** 2).mean()
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        N_case = real_data.size()[0]
+
+        # Calculate interpolation
+        alpha = torch.rand(N_case, 1, 1, 1)
+        alpha = alpha.expand_as(real_data)
+        generated_data=generated_data.expand_as(real_data)
+
         if torch.cuda.is_available():
             alpha = alpha.cuda()
         interpolated = alpha * real_data.data + (1 - alpha) * generated_data.data
