@@ -2542,7 +2542,8 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
 
     def training_step(self, batch, batch_idx,optimizer_idx): ####################### modified JY ################################
         real_profiles,_=batch
-        real_profiles=real_profiles[:,:,torch.randint(self.N_x-self.N_x_sub-2,(1,1),device=self.device)[0]+self.N_x_sub,:]
+        start_idx=torch.randint(self.N_x-self.N_x_sub-2,(1,1),device=self.device)
+        real_profiles=real_profiles[:,:,start_idx:start_idx+self.N_x_sub,:]
         loss = torch.zeros(1, requires_grad=True, device=self.device)
         ######### first set of loss functions #######
         if self.n_training_step<=self.loss_function_schedule[0]["max_iter"]:   
