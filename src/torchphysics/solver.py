@@ -1918,6 +1918,7 @@ class PIAN_Solver_CNN_Wasserstein_LowMem(pl.LightningModule):
         ys=(1-eta.detach())
         self.ymesh=ys.reshape((1,1,1,-1)).expand((1,1,self.N_x_sub,-1))
         self.ys=ys
+        print(self.ys)
         with torch.no_grad():
             meshx,meshy=torch.meshgrid(self.list_x[0:self.N_x_sub],self.ys)
             meshx=meshx.reshape((-1,1))
@@ -1937,6 +1938,7 @@ class PIAN_Solver_CNN_Wasserstein_LowMem(pl.LightningModule):
         ###################################################################################
     def train_dataloader(self):
         """"""
+        print(calling_dataloader)
         # HACK: create an empty trivial dataloader, since real data is loaded
         # in conditions
         steps = self.trainer.max_steps
@@ -2400,6 +2402,7 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
                  disc_space,
                  dist_repository,
                  dist_repository_low,
+                dataset_CNN,
                  val_conditions=(),
                  optimizer_setting_G=OptimizerSetting(torch.optim.Adam,
                                                     1e-3),
@@ -2434,6 +2437,7 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
         self.co_sys=co_sys
         self.GAN_weight=GAN_weight
         self.N_dist=N_dist
+        self.Dataset=dataset_CNN
         self.generator=generator
         self.L_x=L_x
         self.N_x=N_x
@@ -2473,17 +2477,26 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
         else:
             self.nsteps=0
         ###################################################################################
+    #def train_dataloader(self):
+    #    """"""
+    #    print(calling_dataloader)
+    #    # HACK: create an empty trivial dataloader, since real data is loaded
+    #    # in conditions
+    #    steps = self.trainer.max_steps
+    #    if steps is None:
+    #        warnings.warn("The maximum amount of iterations should be defined in"
+    #            "trainer.max_steps. If undefined, the solver will train in epochs"
+    #            "of 1000 steps.")
+    #        steps = 1000
+    #    return torch.utils.data.DataLoader(torch.empty(steps))
     def train_dataloader(self):
-        """"""
-        # HACK: create an empty trivial dataloader, since real data is loaded
-        # in conditions
-        steps = self.trainer.max_steps
-        if steps is None:
-            warnings.warn("The maximum amount of iterations should be defined in"
-                "trainer.max_steps. If undefined, the solver will train in epochs"
-                "of 1000 steps.")
-            steps = 1000
-        return torch.utils.data.DataLoader(torch.empty(steps))
+    #    """"""
+        #print("calling_dataloader")
+    #    # HACK: create an empty trivial dataloader, since real data is loaded
+    #    # in conditions
+        #Batch_size=self.trainer.current_epoch
+        return torch.utils.data.DataLoader(self.Dataset,batch_size=self.trainer.current_epoch+1,shuffle=True,drop_last=True)
+
 
     def val_dataloader(self):
         """"""
@@ -2584,19 +2597,22 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
 
                 #####generator
                 fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:],iX_start)  #######N_dist : random profiles
-                if self.n_training_step%300==0:
-                    plt.figure(figsize=(10,18))
-                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.L_x,fake_profiles.shape[2]),fake_profiles[0,0,:,:].detach().cpu(),extent=[0, 2, 0, self.L_x],levels=10,origin="lower")
+                if self.n_training_step%100==0:
+                    plt.figure(figsize=(18,10))
+
+                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,0,:,:].detach().cpu(),extent=[0, 1, 0, self.list_x[self.N_x_sub]],levels=10,origin="lower")
                     plt.colorbar()
                     plt.savefig(f"Figs/PIAN_Lowmem/U_snapshot_{self.n_training_step}.png")
                     plt.close()
-                    plt.figure(figsize=(10,18))
-                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.L_x,fake_profiles.shape[2]),fake_profiles[0,2,:,:].detach().cpu(),extent=[0, 2, 0, self.L_x],levels=10,origin="lower")
+                    plt.figure(figsize=(18,10))
+
+                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,2,:,:].detach().cpu(),extent=[0, 1, 0, self.list_x[self.N_x_sub]],levels=10,origin="lower")
                     plt.colorbar()
                     plt.savefig(f"Figs/PIAN_Lowmem/urms_snapshot_{self.n_training_step}.png")
                     plt.close()
-                    plt.figure(figsize=(10,18))
-                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.L_x,fake_profiles.shape[2]),fake_profiles[0,4,:,:].detach().cpu(),extent=[0, 2, 0, self.L_x],levels=10,origin="lower")
+                    plt.figure(figsize=(18,10))
+
+                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,4,:,:].detach().cpu(),extent=[0, 1, 0, self.list_x[self.N_x_sub]],levels=10,origin="lower")
                     plt.colorbar()
                     plt.savefig(f"Figs/PIAN_Lowmem/uv_snapshot_{self.n_training_step}.png")
                     plt.close()
@@ -2671,18 +2687,18 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
                 fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:],iX_start)  
                 y_hat=self.discriminator(fake_profiles)
                 if self.n_training_step%300==0:
-                    plt.figure(figsize=(10,18))
-                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.L_x,fake_profiles.shape[2]),fake_profiles[0,0,:,:].detach().cpu(),extent=[0, 2, 0, self.L_x],levels=10,origin="lower")
+                    plt.figure(figsize=(18,10))
+                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,0,:,:].detach().cpu(),extent=[0, 1, 0, self.list_x[self.N_x_sub]],levels=10,origin="lower")
                     plt.colorbar()
                     plt.savefig(f"Figs/PIAN_Lowmem/U_snapshot_{self.n_training_step}.png")
                     plt.close()
-                    plt.figure(figsize=(10,18))
-                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.L_x,fake_profiles.shape[2]),fake_profiles[0,2,:,:].detach().cpu(),extent=[0, 2, 0, self.L_x],levels=10,origin="lower")
+                    plt.figure(figsize=(18,10))
+                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,2,:,:].detach().cpu(),extent=[0, 1, 0, self.list_x[self.N_x_sub]],levels=10,origin="lower")
                     plt.colorbar()
                     plt.savefig(f"Figs/PIAN_Lowmem/urms_snapshot_{self.n_training_step}.png")
                     plt.close()
-                    plt.figure(figsize=(10,18))
-                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.L_x,fake_profiles.shape[2]),fake_profiles[0,4,:,:].detach().cpu(),extent=[0, 2, 0, self.L_x],levels=10,origin="lower")
+                    plt.figure(figsize=(18,10))
+                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,4,:,:].detach().cpu(),extent=[0, 1, 0, self.list_x[self.N_x_sub]],levels=10,origin="lower")
                     plt.colorbar()
                     plt.savefig(f"Figs/PIAN_Lowmem/uv_snapshot_{self.n_training_step}.png")
                     plt.close()
@@ -2758,18 +2774,18 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
             fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:],iX_start)   #######20 : random profiles
             y_hat=self.discriminator(fake_profiles)
             if self.n_training_step%300==0:
-                plt.figure(figsize=(10,18))
-                plt.contourf(self.ys.cpu(),torch.linspace(0,self.L_x,fake_profiles.shape[2]),fake_profiles[0,0,:,:].detach().cpu(),extent=[0, 2, 0, self.L_x],levels=10,origin="lower")
+                plt.figure(figsize=(18,10))
+                plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,0,:,:].detach().cpu(),extent=[0, 1, 0, self.list_x[self.N_x_sub]],levels=10,origin="lower")
                 plt.colorbar()
                 plt.savefig(f"Figs/PIAN_Lowmem/U_snapshot_{self.n_training_step}.png")
                 plt.close()
-                plt.figure(figsize=(10,18))
-                plt.contourf(self.ys.cpu(),torch.linspace(0,self.L_x,fake_profiles.shape[2]),fake_profiles[0,2,:,:].detach().cpu(),extent=[0, 2, 0, self.L_x],levels=10,origin="lower")
+                plt.figure(figsize=(18,10))
+                plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,2,:,:].detach().cpu(),extent=[0, 1, 0, self.list_x[self.N_x_sub]],levels=10,origin="lower")
                 plt.colorbar()
                 plt.savefig(f"Figs/PIAN_Lowmem/urms_snapshot_{self.n_training_step}.png")
                 plt.close()
-                plt.figure(figsize=(10,18))
-                plt.contourf(self.ys.cpu(),torch.linspace(0,self.L_x,fake_profiles.shape[2]),fake_profiles[0,4,:,:].detach().cpu(),extent=[0, 2, 0, self.L_x],levels=10,origin="lower")
+                plt.figure(figsize=(18,10))
+                plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,4,:,:].detach().cpu(),extent=[0, 1, 0, self.list_x[self.N_x_sub]],levels=10,origin="lower")
                 plt.colorbar()
                 plt.savefig(f"Figs/PIAN_Lowmem/uv_snapshot_{self.n_training_step}.png")
                 plt.close()
@@ -2870,54 +2886,6 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
         # Calculate interpolation
         alpha = torch.rand(N_case, 1, 1, 1)
         alpha = alpha.expand_as(real_data)
-        real_data=real_data.expand_as(generated_data)
-
-        if torch.cuda.is_available():
-            alpha = alpha.cuda()
-        interpolated = alpha * real_data.data + (1 - alpha) * generated_data.data
-        interpolated = Variable(interpolated, requires_grad=True)
-        if torch.cuda.is_available():
-            interpolated = interpolated.cuda()
-
-        # Calculate probability of interpolated examples
-        prob_interpolated = self.discriminator(interpolated)
-
-        # Calculate gradients of probabilities with respect to examples
-        gradients = torch_grad(outputs=prob_interpolated, inputs=interpolated,
-                               grad_outputs=torch.ones(prob_interpolated.size()).cuda() if torch.cuda.is_available() else torch.ones(prob_interpolated.size()),
-                               create_graph=True, retain_graph=True)[0]
-
-        # Gradients have shape (batch_size, num_channels, img_width, img_height),
-        # so flatten to easily take norm per example in batch
-        gradients = gradients.view(N_case, -1)
-        #self.losses['gradient_norm'].append(gradients.norm(2, dim=1).mean().data[0])
-
-        # Derivatives of the gradient close to 0 can cause problems because of
-        # the square root, so manually calculate norm and add epsilon
-        gradients_norm = torch.sqrt(torch.sum(gradients ** 2, dim=1) + 1e-12)
-
-        # Return gradient penalty
-        return self.gp_weight * ((gradients_norm - 1) ** 2).mean()
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        N_case = real_data.size()[0]
-
-        # Calculate interpolation
-        alpha = torch.rand(N_case, 1, 1, 1)
-        alpha = alpha.expand_as(real_data)
         generated_data=generated_data.expand_as(real_data)
 
         if torch.cuda.is_available():
@@ -2946,3 +2914,4 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
 
         # Return gradient penalty
         return self.gp_weight * ((gradients_norm - 1) ** 2).mean()
+    
