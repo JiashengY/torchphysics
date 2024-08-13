@@ -2495,6 +2495,14 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
     #    # HACK: create an empty trivial dataloader, since real data is loaded
     #    # in conditions
         #Batch_size=self.trainer.current_epoch
+        with torch.no_grad():
+            meshx,meshy=torch.meshgrid(self.list_x[0:self.N_x_sub],self.ys)
+            meshx=meshx.reshape((-1,1))
+            meshy=meshy.reshape((-1,1))
+            self.N_dist=self.trainer.current_epoch+1
+            self.coords = torch.tensor(torch.concat((meshx,meshy),axis=1).expand((self.N_dist,self.N_x_sub*self.N_y,2)).reshape((self.N_x_sub*self.N_y*self.N_dist,2)),dtype=torch.float32,device=self.device)
+        print(self.coords.shape)
+        self.Dataset.length=1000*self.N_dist
         return torch.utils.data.DataLoader(self.Dataset,batch_size=self.trainer.current_epoch+1,shuffle=True,drop_last=True)
 
 
@@ -2600,19 +2608,19 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
                 if self.n_training_step%100==0:
                     plt.figure(figsize=(18,10))
 
-                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,0,:,:].detach().cpu(),extent=[0, 1, 0, self.list_x[self.N_x_sub]],levels=10,origin="lower")
+                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,0,:,:].detach().cpu(),levels=10,origin="lower")
                     plt.colorbar()
                     plt.savefig(f"Figs/PIAN_Lowmem/U_snapshot_{self.n_training_step}.png")
                     plt.close()
                     plt.figure(figsize=(18,10))
 
-                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,2,:,:].detach().cpu(),extent=[0, 1, 0, self.list_x[self.N_x_sub]],levels=10,origin="lower")
+                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,2,:,:].detach().cpu(),levels=10,origin="lower")
                     plt.colorbar()
                     plt.savefig(f"Figs/PIAN_Lowmem/urms_snapshot_{self.n_training_step}.png")
                     plt.close()
                     plt.figure(figsize=(18,10))
 
-                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,4,:,:].detach().cpu(),extent=[0, 1, 0, self.list_x[self.N_x_sub]],levels=10,origin="lower")
+                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,4,:,:].detach().cpu(),levels=10,origin="lower")
                     plt.colorbar()
                     plt.savefig(f"Figs/PIAN_Lowmem/uv_snapshot_{self.n_training_step}.png")
                     plt.close()
@@ -2688,17 +2696,17 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
                 y_hat=self.discriminator(fake_profiles)
                 if self.n_training_step%300==0:
                     plt.figure(figsize=(18,10))
-                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,0,:,:].detach().cpu(),extent=[0, 1, 0, self.list_x[self.N_x_sub]],levels=10,origin="lower")
+                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,0,:,:].detach().cpu(),levels=10,origin="lower")
                     plt.colorbar()
                     plt.savefig(f"Figs/PIAN_Lowmem/U_snapshot_{self.n_training_step}.png")
                     plt.close()
                     plt.figure(figsize=(18,10))
-                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,2,:,:].detach().cpu(),extent=[0, 1, 0, self.list_x[self.N_x_sub]],levels=10,origin="lower")
+                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,2,:,:].detach().cpu(),levels=10,origin="lower")
                     plt.colorbar()
                     plt.savefig(f"Figs/PIAN_Lowmem/urms_snapshot_{self.n_training_step}.png")
                     plt.close()
                     plt.figure(figsize=(18,10))
-                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,4,:,:].detach().cpu(),extent=[0, 1, 0, self.list_x[self.N_x_sub]],levels=10,origin="lower")
+                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,4,:,:].detach().cpu(),levels=10,origin="lower")
                     plt.colorbar()
                     plt.savefig(f"Figs/PIAN_Lowmem/uv_snapshot_{self.n_training_step}.png")
                     plt.close()
@@ -2775,17 +2783,17 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
             y_hat=self.discriminator(fake_profiles)
             if self.n_training_step%300==0:
                 plt.figure(figsize=(18,10))
-                plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,0,:,:].detach().cpu(),extent=[0, 1, 0, self.list_x[self.N_x_sub]],levels=10,origin="lower")
+                plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,0,:,:].detach().cpu(),levels=10,origin="lower")
                 plt.colorbar()
                 plt.savefig(f"Figs/PIAN_Lowmem/U_snapshot_{self.n_training_step}.png")
                 plt.close()
                 plt.figure(figsize=(18,10))
-                plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,2,:,:].detach().cpu(),extent=[0, 1, 0, self.list_x[self.N_x_sub]],levels=10,origin="lower")
+                plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,2,:,:].detach().cpu(),levels=10,origin="lower")
                 plt.colorbar()
                 plt.savefig(f"Figs/PIAN_Lowmem/urms_snapshot_{self.n_training_step}.png")
                 plt.close()
                 plt.figure(figsize=(18,10))
-                plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,4,:,:].detach().cpu(),extent=[0, 1, 0, self.list_x[self.N_x_sub]],levels=10,origin="lower")
+                plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,4,:,:].detach().cpu(),levels=10,origin="lower")
                 plt.colorbar()
                 plt.savefig(f"Figs/PIAN_Lowmem/uv_snapshot_{self.n_training_step}.png")
                 plt.close()
@@ -2855,7 +2863,8 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
                         'monitor': self.optimizer_setting_D.monitor_lr}
         for input_name in self.optimizer_setting_D.scheduler_args:
             lr_scheduler_D[input_name] = self.optimizer_setting_D.scheduler_args[input_name]
-        return [optimizer_G,optimizer_D,optimizer_D,optimizer_D,optimizer_D,optimizer_D], [lr_scheduler_G,lr_scheduler_D,lr_scheduler_D,lr_scheduler_D,lr_scheduler_D,lr_scheduler_D]
+        #return [optimizer_G,optimizer_D,optimizer_D,optimizer_D,optimizer_D,optimizer_D], [lr_scheduler_G,lr_scheduler_D,lr_scheduler_D,lr_scheduler_D,lr_scheduler_D,lr_scheduler_D]
+        return [optimizer_G,optimizer_D,optimizer_D,optimizer_D], [lr_scheduler_G,lr_scheduler_D,lr_scheduler_D,lr_scheduler_D]
 
     def construct_mask(self,dist_1d,iX_start):
         #print(dist_1d[0,0,:],iX_start[0],self.N_x_sub)
@@ -2886,7 +2895,7 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
         # Calculate interpolation
         alpha = torch.rand(N_case, 1, 1, 1)
         alpha = alpha.expand_as(real_data)
-        generated_data=generated_data.expand_as(real_data)
+        #generated_data=generated_data.expand_as(real_data)
 
         if torch.cuda.is_available():
             alpha = alpha.cuda()
