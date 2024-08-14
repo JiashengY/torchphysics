@@ -29,9 +29,10 @@ GPU="cuda:0"
 GAN_weight=1 # Generator weight
 L_x=3.6 # length of domain
 N_x=144 # grid in x
-N_x_sub=72
-N_y=23 # grid in y
+N_x_sub=64
+N_y=46 # grid in y
 N_dists=1 # N 1d roughness for fake images during training
+GP_weight=10
 
 
 
@@ -139,69 +140,114 @@ def self_cos(input):
 import torch.nn as nn
 import torch.nn.functional as F
 torch.manual_seed(seed=42)
-class FCN_model_Fourier_Feature_CNN(nn.Module):
-    def __init__(self,input_space,output_space,N_features,sigma_1=1,sigma_2=15):
-        super().__init__()
+class ResidualBlock_1d(nn.Module):
+    def __init__(self, in_channels, out_channels, stride = 1, downsample = None):
+        super(ResidualBlock_1d, self).__init__()
+        self.conv1 = nn.Sequential(
+                        nn.Conv1d(in_channels, out_channels, kernel_size = 3, stride = stride, padding = 1),
+                        nn.BatchNorm1d(out_channels),
+                        nn.ReLU())
+        self.conv2 = nn.Sequential(
+                        nn.Conv1d(out_channels, out_channels, kernel_size = 3, stride = 1, padding = 1),
+                        nn.BatchNorm1d(out_channels))
+        self.downsample = downsample
+        self.relu = nn.ReLU()
+        self.out_channels = out_channels
+        
+    def forward(self, x):
+        residual = x
+        out = self.conv1(x)
+        out = self.conv2(out)
+        if self.downsample:
+            residual = self.downsample(x)
+        out += residual
+        out = self.relu(out)
+        return out
+    
+
+class ResNet1d(nn.Module):
+    def __init__(self, block, layers,input_space,output_space,N_features,sigma_1=1,sigma_2=15):
+        super(ResNet1d, self).__init__()
+        self.inplanes = 64
+        self.conv1 = nn.Sequential(
+                        nn.Conv1d(1, 64, kernel_size = 7, stride = 2, padding = 3),
+                        nn.BatchNorm1d(64),
+                        nn.ReLU())
+        self.maxpool = nn.MaxPool1d(kernel_size = 3, stride = 2, padding = 1)
+        self.layer0 = self._make_layer(block, 64, layers[0], stride = 1)
+        self.layer1 = self._make_layer(block, 64, layers[1], stride = 2)
+        self.layer2 = self._make_layer(block, 128, layers[2], stride = 2)
+        self.layer3 = self._make_layer(block, 128, layers[3], stride = 2)
+        self.avgpool = nn.AvgPool1d(2, stride=0)
+        #self.act_binary=nn.Sigmoid()
+        #self.fc_Res = nn.Linear(2048, 2)
+
         self.W_1 = torch.tensor(torch.randn(input_space.dim , N_features //2, dtype=torch.float32,device=GPU) * sigma_1, dtype=torch.float32, requires_grad=False)
         self.W_2 = torch.tensor(torch.randn(input_space.dim , N_features //2, dtype=torch.float32,device=GPU) * sigma_2, dtype=torch.float32, requires_grad=False)
         self.register_buffer("selfW1", self.W_1, persistent=False)
         self.register_buffer("selfW2", self.W_2, persistent=False)
         self.output_space=output_space
-        self.fc1_l=nn.Linear(in_features=N_features,out_features=150,device=GPU)
-        self.fc2_l=nn.Linear(in_features=150,out_features=150,device=GPU)
-        self.fc3_l=nn.Linear(in_features=150,out_features=150,device=GPU)
+        self.fc1_l=nn.Linear(in_features=N_features,out_features=150)
+        self.fc2_l=nn.Linear(in_features=150,out_features=150)
+        self.fc3_l=nn.Linear(in_features=150,out_features=150)
         ###
-        self.fc1_r=nn.Linear(in_features=N_features,out_features=150,device=GPU)
-        self.fc2_r=nn.Linear(in_features=150,out_features=150,device=GPU)
-        self.fc3_r=nn.Linear(in_features=150,out_features=150,device=GPU)
+        self.fc1_r=nn.Linear(in_features=N_features,out_features=150)
+        self.fc2_r=nn.Linear(in_features=150,out_features=150)
+        self.fc3_r=nn.Linear(in_features=150,out_features=150)
 
 
-        self.conv1=nn.Conv1d(1,5,3,stride=1,padding=1,device=GPU) #((720-3+2*1)/1)+1 *8=720 *5
-        self.act1=nn.LeakyReLU(0.1)
-        #self.pool1=nn.MaxPool1d(kernel_size=2) # stride=2   (720-2)/2 + 1 *8 = 360 *3
-        
-        self.conv2=nn.Conv1d(5,9,3,stride=1,padding=1,device=GPU) # ((720-3+2*1)/1)+1 *32 = 720*9
-        self.act2=nn.LeakyReLU(0.1)
-        #self.pool2=nn.MaxPool1d(kernel_size=2) #360*6
+        self.fc_combo1=nn.Linear(in_features=2944+300,out_features=2048)
+        self.fc_combo2=nn.Linear(in_features=2048,out_features=2048)
+        self.fc_combo3=nn.Linear(in_features=2048,out_features=2048)
 
-        self.conv3=nn.Conv1d(9,15,5,stride=3,padding=1,device=GPU) #((720-5+2*1)/3)+1 *32 = 240*15
-        self.act3=nn.LeakyReLU(0.1)
-        self.pool3=nn.MaxPool1d(kernel_size=2)# 120*9
-        self.conv4=nn.Conv1d(15,20,5,stride=3,padding=1,device=GPU) #((120-5+2*1)/3)+1 *32 = 40*20
-        self.act4=nn.LeakyReLU(0.1)
-        self.pool4=nn.MaxPool1d(kernel_size=2)# 20*20
+        self.out=nn.Linear(in_features=2048,out_features=output_space.dim)
+    def _make_layer(self, block, planes, blocks, stride=1):
+        downsample = None
+        if stride != 1 or self.inplanes != planes:
+            
+            downsample = nn.Sequential(
+                nn.Conv1d(self.inplanes, planes, kernel_size=1, stride=stride),
+                nn.BatchNorm1d(planes),
+            )
+        layers = []
+        layers.append(block(self.inplanes, planes, stride, downsample))
+        self.inplanes = planes
+        for i in range(1, blocks):
+            layers.append(block(self.inplanes, planes))
 
-        self.flat=nn.Flatten()
-        
-        self.fc_combo1=nn.Linear(in_features=400+300,out_features=512,device=GPU)
-        self.fc_combo2=nn.Linear(in_features=512,out_features=512,device=GPU)
-        self.fc_combo3=nn.Linear(in_features=512,out_features=256,device=GPU)
+        return nn.Sequential(*layers)
+    
+    
+    def forward(self,x,t):
+        x = self.conv1(x)
+        x = self.maxpool(x)
+        x = self.layer0(x)
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
 
-        
-        self.out=nn.Linear(in_features=256,out_features=output_space.dim,device=GPU)
-    def forward(self,dist_1d,t):
+    #x = self.avgpool(x)
+        x = x.view(x.size(0), -1)
+        #x = nn.ReLU(self.fc_Res(x))
         t=t.as_tensor[:,0:2]
         t_1=torch.concat((self_sin(torch.matmul(t,self.W_1)),self_cos(torch.matmul(t,self.W_1))),1)
-        t_1=F.tanh(self.fc1_l(t_1))
-        t_1=F.tanh(self.fc2_l(t_1))
-        t_1=F.tanh(self.fc3_l(t_1))
+        t_1=self_sin(self.fc1_l(t_1))
+        t_1=self_sin(self.fc2_l(t_1))
+        t_1=self_sin(self.fc3_l(t_1))
         t_2=torch.concat((self_sin(torch.matmul(t,self.W_2)),self_cos(torch.matmul(t,self.W_2))),1)
-        t_2=F.tanh(self.fc1_r(t_2))
-        t_2=F.tanh(self.fc2_r(t_2))
-        t_2=F.tanh(self.fc3_r(t_2))
-        t_figure=self.act1(self.conv1(dist_1d))
-        t_figure=self.act2(self.conv2(t_figure))
-        t_figure=self.pool3(self.act3(self.conv3(t_figure)))
-        t_figure=self.pool4(self.act4(self.conv4(t_figure)))
-        t=torch.concat((t_1,t_2,self.flat(t_figure)),1)
-        t=F.tanh(self.fc_combo1(t))
-        t=F.tanh(self.fc_combo2(t))
-        t=F.tanh(self.fc_combo3(t))
+        t_2=self_sin(self.fc1_r(t_2))
+        t_2=self_sin(self.fc2_r(t_2))
+        t_2=self_sin(self.fc3_r(t_2))
+
+        t=torch.concat((t_1,t_2,x),1)
+        t=self_sin(self.fc_combo1(t))
+        t=self_sin(self.fc_combo2(t))
+        t=self_sin(self.fc_combo3(t))
         t=self.out(t)
+
         return tp.problem.spaces.Points(t, self.output_space)
         
-model=FCN_model_Fourier_Feature_CNN(input_space=X*Y,output_space=U*V*URMS*VRMS*UV*P,N_features=300)
-
+model = ResNet1d(ResidualBlock_1d,[2,2,2,2],input_space=X*Y,output_space=U*V*URMS*VRMS*UV*P,N_features=300).to(GPU)
 
 
 class ResidualBlock(nn.Module):
@@ -504,8 +550,20 @@ solver = tp.solver.PIAN_Solver_CNN_Wasserstein_LowMem_half(list_of_Losses,#1000
                                 dataset_CNN=dataset_turbulent
                          )
 
-
-
+a,_=next(iter(Disc_dataloader))
+a.shape
+plt.imshow(a[0,0,0:N_x_sub,:].detach().cpu())
+plt.colorbar()
+plt.savefig(f"Figs/PIAN_Lowmem/U_snapshot_Real.png")
+plt.close()
+plt.imshow(a[0,2,0:N_x_sub,:].detach().cpu())
+plt.colorbar()
+plt.savefig(f"Figs/PIAN_Lowmem/uu_snapshot_Real.png")
+plt.close()
+plt.imshow(a[0,4,0:N_x_sub,:].detach().cpu())
+plt.colorbar()
+plt.savefig(f"Figs/PIAN_Lowmem/uv_snapshot_Real.png")
+plt.close()
 torch.set_float32_matmul_precision('medium')
 comet_logger = pl_loggers.CSVLogger(save_dir="logs/")
 trainer = pl.Trainer(gpus=1,# use one GPU
