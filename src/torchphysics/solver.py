@@ -2429,12 +2429,14 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
                  N_iter_discriminator=5,
                  gp_weight=10,
                  gpu="cuda:0",
-                 Log_dir="runs/"):######################################################################
+                 Log_dir="runs/",
+                 Grid_data=False):######################################################################
         super().__init__()
         self.writer_loss=SummaryWriter(Log_dir)
         self.writer_generator=SummaryWriter(Log_dir)
         #######Generator#############
         self.co_sys=co_sys
+        self.Grid_data=Grid_data
         self.GAN_weight=GAN_weight
         self.N_dist=N_dist
         self.Dataset=dataset_CNN
@@ -2456,8 +2458,11 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
         self.repo=dist_repository
         self.repo_low=dist_repository_low
         ############################## Modified JY ######################################
-        eta=torch.cos(torch.pi*(torch.tensor([i for i in range(self.N_y*2)],device=gpu))/(self.N_y*2-1)) 
-        ys=(1-eta.detach())[:N_y]
+        if self.Grid_data:
+            ys=torch.linspace(0,1,self.N_y,device=gpu,dtype=torch.float32)
+        else:
+            eta=torch.cos(torch.pi*(torch.tensor([i for i in range(self.N_y*2)],device=gpu))/(self.N_y*2-1)) 
+            ys=(1-eta.detach())[:N_y]
         self.ymesh=ys.reshape((1,1,1,-1)).expand((1,1,self.N_x_sub,-1))
         self.ys=ys
         with torch.no_grad():
