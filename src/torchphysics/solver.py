@@ -2502,7 +2502,7 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
             self.N_dist=self.trainer.current_epoch+1
             self.coords = torch.tensor(torch.concat((meshx,meshy),axis=1).expand((self.N_dist,self.N_x_sub*self.N_y,2)).reshape((self.N_x_sub*self.N_y*self.N_dist,2)),dtype=torch.float32,device=self.device)
         print(self.coords.shape)
-        self.Dataset.length=1000*self.N_dist
+        self.Dataset.length=2000*self.N_dist
         return torch.utils.data.DataLoader(self.Dataset,batch_size=self.trainer.current_epoch+1,shuffle=True,drop_last=True)
 
 
@@ -2608,19 +2608,19 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
                 if self.n_training_step%100==0:
                     plt.figure(figsize=(18,10))
 
-                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,0,:,:].detach().cpu(),levels=10,origin="lower")
+                    plt.imshow(fake_profiles[0,0,:,:].detach().cpu())
                     plt.colorbar()
                     plt.savefig(f"Figs/PIAN_Lowmem/U_snapshot_{self.n_training_step}.png")
                     plt.close()
                     plt.figure(figsize=(18,10))
 
-                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,2,:,:].detach().cpu(),levels=10,origin="lower")
+                    plt.imshow(fake_profiles[0,2,:,:].detach().cpu())
                     plt.colorbar()
                     plt.savefig(f"Figs/PIAN_Lowmem/urms_snapshot_{self.n_training_step}.png")
                     plt.close()
                     plt.figure(figsize=(18,10))
 
-                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,4,:,:].detach().cpu(),levels=10,origin="lower")
+                    plt.imshow(fake_profiles[0,4,:,:].detach().cpu())
                     plt.colorbar()
                     plt.savefig(f"Figs/PIAN_Lowmem/uv_snapshot_{self.n_training_step}.png")
                     plt.close()
@@ -2696,17 +2696,17 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
                 y_hat=self.discriminator(fake_profiles)
                 if self.n_training_step%300==0:
                     plt.figure(figsize=(18,10))
-                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,0,:,:].detach().cpu(),levels=10,origin="lower")
+                    plt.imshow(fake_profiles[0,0,:,:].detach().cpu())
                     plt.colorbar()
                     plt.savefig(f"Figs/PIAN_Lowmem/U_snapshot_{self.n_training_step}.png")
                     plt.close()
                     plt.figure(figsize=(18,10))
-                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,2,:,:].detach().cpu(),levels=10,origin="lower")
+                    plt.imshow(fake_profiles[0,2,:,:].detach().cpu())
                     plt.colorbar()
                     plt.savefig(f"Figs/PIAN_Lowmem/urms_snapshot_{self.n_training_step}.png")
                     plt.close()
                     plt.figure(figsize=(18,10))
-                    plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,4,:,:].detach().cpu(),levels=10,origin="lower")
+                    plt.imshow(fake_profiles[0,4,:,:].detach().cpu())
                     plt.colorbar()
                     plt.savefig(f"Figs/PIAN_Lowmem/uv_snapshot_{self.n_training_step}.png")
                     plt.close()
@@ -2783,17 +2783,17 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
             y_hat=self.discriminator(fake_profiles)
             if self.n_training_step%300==0:
                 plt.figure(figsize=(18,10))
-                plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,0,:,:].detach().cpu(),levels=10,origin="lower")
+                plt.imshow(fake_profiles[0,0,:,:].detach().cpu())
                 plt.colorbar()
                 plt.savefig(f"Figs/PIAN_Lowmem/U_snapshot_{self.n_training_step}.png")
                 plt.close()
                 plt.figure(figsize=(18,10))
-                plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,2,:,:].detach().cpu(),levels=10,origin="lower")
+                plt.imshow(fake_profiles[0,2,:,:].detach().cpu())
                 plt.colorbar()
                 plt.savefig(f"Figs/PIAN_Lowmem/urms_snapshot_{self.n_training_step}.png")
                 plt.close()
                 plt.figure(figsize=(18,10))
-                plt.contourf(self.ys.cpu(),torch.linspace(0,self.list_x[self.N_x_sub],fake_profiles.shape[2]),fake_profiles[0,4,:,:].detach().cpu(),levels=10,origin="lower")
+                plt.imshow(fake_profiles[0,4,:,:].detach().cpu())
                 plt.colorbar()
                 plt.savefig(f"Figs/PIAN_Lowmem/uv_snapshot_{self.n_training_step}.png")
                 plt.close()
