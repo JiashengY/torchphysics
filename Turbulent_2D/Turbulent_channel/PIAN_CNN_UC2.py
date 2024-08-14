@@ -33,6 +33,7 @@ N_x_sub=64
 N_y=46 # grid in y
 N_dists=1 # N 1d roughness for fake images during training
 GP_weight=10
+N_epochs=1000
 
 
 
@@ -469,16 +470,18 @@ boundary_cond_p = tp.conditions.PINNCondition_CNN(model, bound_sampler_left, bou
 
 from random import sample
 class Data_set_pinn(torch.utils.data.Dataset):
-    def __init__(self,Data_Pinn,matrix_mask_Data):
+    def __init__(self,Data_Pinn,matrix_mask_Data,epoch_batch_size=1000):
         #self.x_train=data_DF[x_list].values
         #self.Data_Pinn=DF.to_numpy().reshape((1,-1))
         #self.y_train=data_DF[y_list].values
         self.Data_Pinn=torch.cat((Data_Pinn,matrix_mask_Data),1)
+        self.N_epochs=epoch_batch_size
+        self.length=epoch_batch_size
         #self.y_train=torch.tensor(y_train,dtype=torch.float32)
         #self.x_train=tp.spaces.Points(self.x_train,X*Y)
         #self.y_train=tp.spaces.Points(self.y_train,U*V)
     def __len__(self):
-        return 3000
+        return self.length
         #return 5
 
     def __getitem__(self,idx):
@@ -488,7 +491,7 @@ class Data_set_pinn(torch.utils.data.Dataset):
         P_xtrain=self.Data_Pinn[idx_random[0]]
         P_ytrain=self.Data_Pinn[idx_random[0]]
         return P_xtrain,P_ytrain
-dataset_turbulent=Data_set_pinn(Data_Pinn,matrix_mask_Data)
+dataset_turbulent=Data_set_pinn(Data_Pinn,matrix_mask_Data,epoch_batch_size=N_epochs)
 Disc_dataloader=DataLoader(dataset_turbulent,batch_size=N_dists,shuffle=True,drop_last=True)
 
 ##Learning rate scheduling To-Do -- launch LR scheduling only after first training phase
