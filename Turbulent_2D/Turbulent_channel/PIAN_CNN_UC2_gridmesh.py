@@ -291,8 +291,11 @@ class ResNet(nn.Module):
         self.layer3 = self._make_layer(block, 512, layers[3], stride = 2)
         self.avgpool = nn.AvgPool2d(3, stride=1)
         self.act_binary=nn.Sigmoid()
-        self.fc = nn.Linear(7168, 1)
-        
+        self.fc = nn.Linear(7168, 4096)
+        self.fc2 = nn.Linear(4096, 4096)
+        self.fc3 = nn.Linear(4096, 4096)
+        self.fc4 = nn.Linear(4096, 1)
+
     def _make_layer(self, block, planes, blocks, stride=1):
         downsample = None
         if stride != 1 or self.inplanes != planes:
@@ -320,7 +323,10 @@ class ResNet(nn.Module):
 
     #x = self.avgpool(x)
         x = x.view(x.size(0), -1)
-        x = self.act_binary(self.fc(x))
+        x = nn.ReLU(self.fc1(x))
+        x = nn.ReLU(self.fc2(x))
+        x = nn.ReLU(self.fc3(x))
+        x = self.act_binary(self.fc4(x))
 
         return x
 disc=ResNet(ResidualBlock, [2, 2, 2, 2]).to(GPU)
