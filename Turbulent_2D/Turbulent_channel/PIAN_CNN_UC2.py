@@ -566,6 +566,9 @@ plt.savefig(f"Figs/PIAN_Lowmem/uv_snapshot_Real.png")
 plt.close()
 torch.set_float32_matmul_precision('medium')
 comet_logger = pl_loggers.CSVLogger(save_dir="logs/")
+print(model)
+print(disc)
+print()
 trainer = pl.Trainer(gpus=1,# use one GPU
                      max_steps=29000, # iteration number
                      benchmark=True, # faster if input batch has constant size
