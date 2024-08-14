@@ -291,7 +291,7 @@ class ResNet(nn.Module):
         self.layer3 = self._make_layer(block, 512, layers[3], stride = 2)
         self.avgpool = nn.AvgPool2d(3, stride=1)
         self.act_binary=nn.Sigmoid()
-        self.fc = nn.Linear(2048, 1)
+        self.fc = nn.Linear(7168, 1)
         
     def _make_layer(self, block, planes, blocks, stride=1):
         downsample = None
