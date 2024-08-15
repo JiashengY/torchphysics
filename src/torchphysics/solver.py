@@ -2430,7 +2430,8 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
                  gp_weight=10,
                  gpu="cuda:0",
                  Log_dir="runs/",
-                 Grid_data=False):######################################################################
+                 Grid_data=False,
+                 max_batch=4):######################################################################
         super().__init__()
         self.writer_loss=SummaryWriter(Log_dir)
         self.writer_generator=SummaryWriter(Log_dir)
@@ -2440,6 +2441,7 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
         self.GAN_weight=GAN_weight
         self.N_dist=N_dist
         self.Dataset=dataset_CNN
+        self.max_batch=max_batch
         self.generator=generator
         self.L_x=L_x
         self.N_x=N_x
@@ -2500,15 +2502,17 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
     #    # HACK: create an empty trivial dataloader, since real data is loaded
     #    # in conditions
         #Batch_size=self.trainer.current_epoch
-        with torch.no_grad():
-            meshx,meshy=torch.meshgrid(self.list_x[0:self.N_x_sub],self.ys)
-            meshx=meshx.reshape((-1,1))
-            meshy=meshy.reshape((-1,1))
-            self.N_dist=self.trainer.current_epoch+1
-            self.coords = torch.tensor(torch.concat((meshx,meshy),axis=1).expand((self.N_dist,self.N_x_sub*self.N_y,2)).reshape((self.N_x_sub*self.N_y*self.N_dist,2)),dtype=torch.float32,device=self.device)
-        print(self.coords.shape)
-        self.Dataset.length=self.Dataset.N_epochs*self.N_dist
-        return torch.utils.data.DataLoader(self.Dataset,batch_size=self.trainer.current_epoch+1,shuffle=True,drop_last=True)
+        if self.trainer.current_epoch< self.max_batch:
+            with torch.no_grad():
+                meshx,meshy=torch.meshgrid(self.list_x[0:self.N_x_sub],self.ys)
+                meshx=meshx.reshape((-1,1))
+                meshy=meshy.reshape((-1,1))
+                self.N_dist=self.trainer.current_epoch+1
+                self.coords = torch.tensor(torch.concat((meshx,meshy),axis=1).expand((self.N_dist,self.N_x_sub*self.N_y,2)).reshape((self.N_x_sub*self.N_y*self.N_dist,2)),dtype=torch.float32,device=self.device)
+            self.Dataset.length=self.Dataset.N_epochs*self.N_dist
+            return torch.utils.data.DataLoader(self.Dataset,batch_size=self.trainer.current_epoch+1,shuffle=True,drop_last=True)
+        else:
+            return torch.utils.data.DataLoader(self.Dataset,batch_size=self.max_batch,shuffle=True,drop_last=True)
 
 
     def val_dataloader(self):
