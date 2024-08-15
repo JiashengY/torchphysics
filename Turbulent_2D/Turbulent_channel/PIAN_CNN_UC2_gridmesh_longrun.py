@@ -29,14 +29,14 @@ GPU="cuda:0"
 GAN_weight=1 # Generator weight
 L_x=3.6 # length of domain
 N_x=200 # grid in x
-N_x_sub=64
+N_x_sub=72
 N_y=100 # grid in y
 N_dists=1 # N 1d roughness for fake images during training
 GP_weight=10
-N_epochs=100
+N_epochs=1000
 Grid_data=True
-print("LOOOKKKKKKKKKKKKKKKKKKKHERRRRRRRRR")
-print(torch.cuda.memory_reserved(device=GPU))
+
+
 
 X_interval = tp.domains.Interval(X, 0, L_x) # <-add the bounds of the Interval (0, 2)
 Y_interval = tp.domains.Interval(Y, 0, 1.0)
@@ -582,7 +582,7 @@ print(model)
 print(disc)
 print()
 trainer = pl.Trainer(gpus=1,# use one GPU
-                     max_steps=29000, # iteration number
+                     max_steps=80000, # iteration number
                      benchmark=True, # faster if input batch has constant size
                      logger=comet_logger, # for writting into tensorboard
                      log_every_n_steps=100,
@@ -593,7 +593,7 @@ trainer = pl.Trainer(gpus=1,# use one GPU
 trainer.fit(solver)#,train_dataloaders=Disc_dataloader)
 
 
-torch.save(model,"Flat_PIAN_CNN_OPT_Wasserstein.pt")
+torch.save(model,"Flat_PIAN_CNN_OPT_Wasserstein_gridmesh.pt")
 
 
 
