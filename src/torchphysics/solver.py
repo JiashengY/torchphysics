@@ -3019,6 +3019,7 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half_logarithmic(pl.LightningModule):
         self.repo_low=dist_repository_low
         ############################## Modified JY ######################################
         self.ys=ys
+        self.ymesh=ys.reshape((1,1,1,-1)).expand((1,1,self.N_x_sub,-1))
         with torch.no_grad():
             meshx,meshy=torch.meshgrid(self.list_x[0:self.N_x_sub],self.ys)
             meshx=meshx.reshape((-1,1))
