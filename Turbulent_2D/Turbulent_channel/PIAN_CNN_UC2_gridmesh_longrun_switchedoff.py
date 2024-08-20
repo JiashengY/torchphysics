@@ -34,7 +34,7 @@ N_y=100 # grid in y
 N_dists=1 # N 1d roughness for fake images during training
 GP_weight=10
 N_epochs=1000
-Grid_data=True
+Grid_data=False
 
 
 
@@ -52,7 +52,7 @@ Sim_domain_sub_low=X_interval*Y_interval_sub_low*C_interval
 
 
 
-DF_Data=pd.read_csv("Data/Flow_3d_mesh_2289_6_X200Y100_half.csv")
+DF_Data=pd.read_csv("Data/Flow_3d_2289_6_Cx3_Cy3X240Y76_half.csv")
 DF=DF_Data[["U","V","urms","vrms","uv",]]
 
 N_c=len(DF_Data["c"].unique()) # number of available training data
@@ -340,13 +340,13 @@ disc=ResNet(ResidualBlock, [2, 2, 2, 2]).to(GPU)
 
 
 def pde_IBM(u,v):
-    return torch.sqrt(torch.square(u)+torch.square(v))
+    return torch.sqrt(torch.square(u)+torch.square(v))+torch.abs(urms)+torch.abs(vrms)+torch.abs(uv)
 pde_cond_IBM_low = tp.conditions.PINNCondition_CNN(model, IBM_sampler_irr_low, pde_IBM, dist_matrix=dist,weight=50,name='IBM_low')
 
 
-def pde_IBM_uu(urms,vrms,uv,p):
-    return torch.abs(urms)+torch.abs(vrms)+torch.abs(uv)
-pde_cond_IBM_low_uu = tp.conditions.PINNCondition_CNN(model, IBM_sampler_irr_low, pde_IBM_uu, dist_matrix=dist,weight=50,name='IBM_low_uu')
+#def pde_IBM_uu(urms,vrms,uv,p):
+#    return torch.abs(urms)+torch.abs(vrms)+torch.abs(uv)
+#pde_cond_IBM_low_uu = tp.conditions.PINNCondition_CNN(model, IBM_sampler_irr_low, pde_IBM_uu, dist_matrix=dist,weight=50,name='IBM_low_uu')
 
 
 
@@ -377,103 +377,103 @@ def pde_residual_y(u,v, x, y,urms,vrms,uv,p):
 
 pde_cond_y = tp.conditions.PINNCondition_CNN(model, inner_sampler, pde_residual_y, dist_matrix=dist,weight=50,name='Momentum_y')
 
-def boundary_residual_x(u, x,y):
-    return torch.square(u) - 0.0
-boundary_cond_x = tp.conditions.PINNCondition_CNN(model, bound_sampler_low, boundary_residual_x, dist_matrix=dist, weight=1,name='noslip_x')
+#def boundary_residual_x(u, x,y):
+#    return torch.square(u) - 0.0
+#boundary_cond_x = tp.conditions.PINNCondition_CNN(model, bound_sampler_low, boundary_residual_x, dist_matrix=dist, weight=1,name='noslip_x')
 
-def boundary_residual_y(v, x,y):
-    return torch.square(v) - 0.0
+#def boundary_residual_y(v, x,y):
+#    return torch.square(v) - 0.0
 
-boundary_cond_y = tp.conditions.PINNCondition_CNN(model, bound_sampler_low, boundary_residual_y, dist_matrix=dist, weight=1,name='noslip_y')
+#boundary_cond_y = tp.conditions.PINNCondition_CNN(model, bound_sampler_low, boundary_residual_y, dist_matrix=dist, weight=1,name='noslip_y')
 
-def boundary_residual_uu(urms, x,y):
-    return torch.square(urms) - 0.0
+#def boundary_residual_uu(urms, x,y):
+#    return torch.square(urms) - 0.0
 
-boundary_cond_uu = tp.conditions.PINNCondition_CNN(model, bound_sampler_low, boundary_residual_uu, dist_matrix=dist, weight=1,name='noslip_x_uu')
+#boundary_cond_uu = tp.conditions.PINNCondition_CNN(model, bound_sampler_low, boundary_residual_uu, dist_matrix=dist, weight=1,name='noslip_x_uu')
 
-def boundary_residual_vv(vrms, x,y):
-    return torch.square(vrms) - 0.0
+#def boundary_residual_vv(vrms, x,y):
+#    return torch.square(vrms) - 0.0
 
-boundary_cond_vv = tp.conditions.PINNCondition_CNN(model, bound_sampler_low, boundary_residual_vv, dist_matrix=dist, weight=1,name='noslip_x_vv')
-
-
-
-
-def boundary_residual_uv(uv, x,y):
-    return uv - 0.0
-
-boundary_cond_uv = tp.conditions.PINNCondition_CNN(model, bound_sampler_low, boundary_residual_uv, dist_matrix=dist, weight=1,name='noslip_x_uv')
-
-def boundary_residual_x_grad(u, x,y,c):
-    un=tp.utils.grad(u,y)
-    return torch.abs(un)
-boundary_cond_x_up = tp.conditions.PINNCondition_CNN(model, bound_sampler_up, boundary_residual_x_grad, dist_matrix=dist, weight=1,name='bound_x_up')
-
-def boundary_residual_y_grad(v):
-    return torch.abs(v)
-boundary_cond_y_up = tp.conditions.PINNCondition_CNN(model, bound_sampler_up, boundary_residual_y_grad, dist_matrix=dist, weight=1,name='bound_y_up')
-
-
-def boundary_residual_Re_grad(urms,vrms, x,y,c):
-    uun=tp.utils.grad(urms,y)
-    vvn=tp.utils.grad(vrms,y)
-    return torch.abs(uun)+torch.abs(vvn)
-boundary_cond_Re_up = tp.conditions.PINNCondition_CNN(model, bound_sampler_up, boundary_residual_Re_grad, dist_matrix=dist, weight=1,name='bound_Re_up')
+#boundary_cond_vv = tp.conditions.PINNCondition_CNN(model, bound_sampler_low, boundary_residual_vv, dist_matrix=dist, weight=1,name='noslip_x_vv')
 
 
 
-def boundary_residual_uv_grad(uv, x,y,c):
-    return torch.abs(uv)
-boundary_cond_uv_up = tp.conditions.PINNCondition_CNN(model, bound_sampler_up, boundary_residual_uv_grad, dist_matrix=dist, weight=1,name='bound_uv_up')
+
+#def boundary_residual_uv(uv, x,y):
+#    return uv - 0.0
+
+#boundary_cond_uv = tp.conditions.PINNCondition_CNN(model, bound_sampler_low, boundary_residual_uv, dist_matrix=dist, weight=1,name='noslip_x_uv')
+
+def boundary_residual(u,v,urms,vrms,uv,p, x,y,c):
+    un=torch.abs(tp.utils.grad(u,y))+torch.abs(v)+torch.abs(tp.utils.grad(urms,y))+torch.abs(tp.utils.grad(vrms,y))+torch.abs(uv)+torch.abs(p)
+    return un
+boundary_cond_up = tp.conditions.PINNCondition_CNN(model, bound_sampler_up, boundary_residual, dist_matrix=dist, weight=1,name='bound_up')
+
+#def boundary_residual_y_grad(v):
+#    return torch.abs(v)
+#boundary_cond_y_up = tp.conditions.PINNCondition_CNN(model, bound_sampler_up, boundary_residual_y_grad, dist_matrix=dist, #weight=1,name='bound_y_up')
 
 
-def boundary_residual_p_grad(p, x,y,c):
-    return torch.abs(p)
-boundary_cond_p_up = tp.conditions.PINNCondition_CNN(model, bound_sampler_up, boundary_residual_p_grad, dist_matrix=dist, weight=1,name='bound_p_up')
+#def boundary_residual_Re_grad(urms,vrms, x,y,c):
+#    uun=tp.utils.grad(urms,y)
+#    vvn=tp.utils.grad(vrms,y)
+#    return torch.abs(uun)+torch.abs(vvn)
+#boundary_cond_Re_up = tp.conditions.PINNCondition_CNN(model, bound_sampler_up, boundary_residual_Re_grad, dist_matrix=dist, weight=1,name='bound_Re_up')
+
+
+
+#def boundary_residual_uv_grad(uv, x,y,c):
+#    return torch.abs(uv)
+#boundary_cond_uv_up = tp.conditions.PINNCondition_CNN(model, bound_sampler_up, boundary_residual_uv_grad, dist_matrix=dist, weight=1,name='bound_uv_up')
+
+
+#def boundary_residual_p_grad(p, x,y,c):
+#    return torch.abs(p)
+#boundary_cond_p_up = tp.conditions.PINNCondition_CNN(model, bound_sampler_up, boundary_residual_p_grad, dist_matrix=dist, weight=1,name='bound_p_up')
 
 
 
 Periodic_sampler=tp.samplers.RandomUniformSampler(Y_interval*C_interval,n_points=250).make_static(resample_interval=2000)#,filter_fn=Inner_filter)
 
 
-def periodic_residual_x(u_left,u_right):
-    Periodic_condition= u_left - u_right
+def periodic_residual(u_left,u_right,v_left,v_right,urms_left,urms_right,vrms_left,vrms_right,uv_left,uv_right,p_left,p_right):
+    Periodic_condition= torch.abs(u_left - u_right)+torch.abs(v_left - v_right)+torch.abs(urms_left - urms_right)+torch.abs(vrms_left - vrms_right)+torch.abs(uv_left - uv_right)+torch.abs(p_left - p_right)
     return Periodic_condition
-periodic_cond_x=tp.conditions.PeriodicCondition_CNN(model,X_interval,periodic_residual_x,dist_matrix=dist,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic_x')
+periodic_cond=tp.conditions.PeriodicCondition_CNN(model,X_interval,periodic_residual,dist_matrix=dist,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic')
 
 
-def periodic_residual_y(v_left,v_right):
-    Periodic_condition= v_left - v_right
-    return Periodic_condition
-periodic_cond_y=tp.conditions.PeriodicCondition_CNN(model,X_interval,periodic_residual_y,dist_matrix=dist,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic_y')
+#def periodic_residual_y(v_left,v_right):
+#    Periodic_condition= v_left - v_right
+#    return Periodic_condition
+#periodic_cond_y=tp.conditions.PeriodicCondition_CNN(model,X_interval,periodic_residual_y,dist_matrix=dist,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic_y')
 
-def periodic_residual_uu(urms_left,urms_right):
-    Periodic_condition= urms_left - urms_right
-    return Periodic_condition
-periodic_cond_uu=tp.conditions.PeriodicCondition_CNN(model,X_interval,periodic_residual_uu,dist_matrix=dist,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic_uu')
-
-
-def periodic_residual_vv(vrms_left,vrms_right):
-    Periodic_condition= vrms_left - vrms_right
-    return Periodic_condition
-periodic_cond_vv=tp.conditions.PeriodicCondition_CNN(model,X_interval,periodic_residual_vv,dist_matrix=dist,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic_vv')
+#def periodic_residual_uu(urms_left,urms_right):
+#    Periodic_condition= urms_left - urms_right
+#    return Periodic_condition
+#periodic_cond_uu=tp.conditions.PeriodicCondition_CNN(model,X_interval,periodic_residual_uu,dist_matrix=dist,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic_uu')
 
 
-def periodic_residual_uv(uv_left,uv_right):
-    Periodic_condition= uv_left - uv_right
-    return Periodic_condition
-periodic_cond_uv=tp.conditions.PeriodicCondition_CNN(model,X_interval,periodic_residual_uv,dist_matrix=dist,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic_uv')
+#def periodic_residual_vv(vrms_left,vrms_right):
+#    Periodic_condition= vrms_left - vrms_right
+#    return Periodic_condition
+#periodic_cond_vv=tp.conditions.PeriodicCondition_CNN(model,X_interval,periodic_residual_vv,dist_matrix=dist,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic_vv')
 
 
-def periodic_residual_p(p_left,p_right):
-    Periodic_condition= p_left-p_right
-    return Periodic_condition
-periodic_cond_p=tp.conditions.PeriodicCondition(model,X_interval,periodic_residual_p,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic_p')
-bound_sampler_left = tp.samplers.RandomUniformSampler(X_interval.boundary_left*Y_interval, n_points=250)
-def boundary_residual_p(p, x,y):
-    return p
+#def periodic_residual_uv(uv_left,uv_right):
+#    Periodic_condition= uv_left - uv_right
+#    return Periodic_condition
+#periodic_cond_uv=tp.conditions.PeriodicCondition_CNN(model,X_interval,periodic_residual_uv,dist_matrix=dist,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic_uv')
 
-periodic_cond_p=tp.conditions.PeriodicCondition_CNN(model,X_interval,periodic_residual_p,dist_matrix=dist,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic_p')
+
+#def periodic_residual_p(p_left,p_right):
+#    Periodic_condition= p_left-p_right
+#    return Periodic_condition
+#periodic_cond_p=tp.conditions.PeriodicCondition(model,X_interval,periodic_residual_p,non_periodic_sampler=Periodic_sampler, #weight=1,name='periodic_p')
+#bound_sampler_left = tp.samplers.RandomUniformSampler(X_interval.boundary_left*Y_interval, n_points=250)
+#def boundary_residual_p(p, x,y):
+#    return p
+
+#periodic_cond_p=tp.conditions.PeriodicCondition_CNN(model,X_interval,periodic_residual_p,dist_matrix=dist,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic_p')
 
 bound_sampler_left = tp.samplers.RandomUniformSampler(X_interval.boundary_left*Y_interval*C_interval, n_points=250)
 def boundary_residual_p(p, x,y):
@@ -513,24 +513,24 @@ optim_D = tp.OptimizerSetting(torch.optim.Adam, lr=0.0001,scheduler_class=torch.
 #solver = tp.solver.Solver([pde_cond_IBM,pde_cond_mass,boundary_cond_x, pde_cond_x,periodic_cond_x,boundary_cond_y, pde_cond_y,periodic_cond_y], optimizer_setting=optim)
 ##loss terms scheduling
 list_of_Losses=[          pde_cond_IBM_low,
-                           pde_cond_IBM_low_uu,
+                           #pde_cond_IBM_low_uu,
                            #boundary_cond_x,#1000
                            #boundary_cond_y,
                            #boundary_cond_uu,#1000
                            #boundary_cond_vv,
                            #boundary_cond_uv,
                            #boundary_cond_p,
-                           periodic_cond_x,#2000
-                           periodic_cond_y,
-                           periodic_cond_uu,#2000
-                           periodic_cond_vv,
-                           periodic_cond_uv,
-                           periodic_cond_p,
-                           boundary_cond_x_up,
-                           boundary_cond_y_up,
-                           boundary_cond_Re_up,
-                           boundary_cond_uv_up,
-                           boundary_cond_p_up,
+                           periodic_cond,#2000
+                           #periodic_cond_y,
+                           #periodic_cond_uu,#2000
+                           #periodic_cond_vv,
+                           #periodic_cond_uv,
+                           #periodic_cond_p,
+                           boundary_cond_up,
+                           #boundary_cond_y_up,
+                           #boundary_cond_Re_up,
+                           #boundary_cond_uv_up,
+                           #boundary_cond_p_up,
                            pde_cond_x,#5000
                            pde_cond_y,#5000
                            pde_cond_mass]
