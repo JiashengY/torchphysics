@@ -28,9 +28,9 @@ P=tp.spaces.R1('p')
 GPU="cuda:0"
 GAN_weight=1 # Generator weight
 L_x=3.6 # length of domain
-N_x=200 # grid in x
-N_x_sub=72
-N_y=100 # grid in y
+N_x=240 # grid in x
+N_x_sub=100
+N_y=76 # grid in y
 N_dists=1 # N 1d roughness for fake images during training
 GP_weight=10
 N_epochs=1000
@@ -109,7 +109,7 @@ def IBM_irr_filter_low(x,y,c):
     c_new = c_new.to(torch.long)
     height=dist[c_new,position_l]+(dist[c_new,position_r]-dist[c_new,position_l])*(x_new-x_corr[position_l])/(x_corr[position_r]-x_corr[position_l])
     return (y[...,0]<=height)
-IBM_sampler_irr_low = tp.samplers.RandomUniformSampler(Sim_domain_sub_low,n_points=1000,filter_fn=IBM_irr_filter_low).make_static(resample_interval=2000)
+IBM_sampler_irr_low = tp.samplers.RandomUniformSampler(Sim_domain_sub_low,n_points=5000,filter_fn=IBM_irr_filter_low).make_static(resample_interval=2000)
 
 
 
@@ -508,8 +508,8 @@ dataset_turbulent=Data_set_pinn(Data_Pinn,matrix_mask_Data,epoch_batch_size=N_ep
 Disc_dataloader=DataLoader(dataset_turbulent,batch_size=N_dists,shuffle=True,drop_last=True)
 
 ##Learning rate scheduling To-Do -- launch LR scheduling only after first training phase
-optim_G = tp.OptimizerSetting(torch.optim.Adam, lr=0.0001,scheduler_class=torch.optim.lr_scheduler.ReduceLROnPlateau,scheduler_args={"patience":20000,"factor":0.8,"verbose":True,"min_lr":0.000005},monitor_lr="train/model_loss")
-optim_D = tp.OptimizerSetting(torch.optim.Adam, lr=0.0001,scheduler_class=torch.optim.lr_scheduler.ReduceLROnPlateau,scheduler_args={"patience":20000,"factor":0.8,"verbose":True,"min_lr":0.000005},monitor_lr="train/D_loss")
+optim_G = tp.OptimizerSetting(torch.optim.Adam, lr=0.0001,scheduler_class=torch.optim.lr_scheduler.ReduceLROnPlateau,scheduler_args={"patience":10000,"factor":0.8,"verbose":True,"min_lr":0.000005},monitor_lr="train/model_loss")
+optim_D = tp.OptimizerSetting(torch.optim.Adam, lr=0.0001,scheduler_class=torch.optim.lr_scheduler.ReduceLROnPlateau,scheduler_args={"patience":10000,"factor":0.8,"verbose":True,"min_lr":0.000005},monitor_lr="train/D_loss")
 #solver = tp.solver.Solver([pde_cond_IBM,pde_cond_mass,boundary_cond_x, pde_cond_x,periodic_cond_x,boundary_cond_y, pde_cond_y,periodic_cond_y], optimizer_setting=optim)
 ##loss terms scheduling
 list_of_Losses=[          pde_cond_IBM_low,
@@ -564,7 +564,8 @@ solver = tp.solver.PIAN_Solver_CNN_Wasserstein_LowMem_half(list_of_Losses,#1000
                                 gpu=GPU,
                                 N_x_sub=N_x_sub,
                                 dataset_CNN=dataset_turbulent,
-                                Grid_data=Grid_data
+                                Grid_data=Grid_data,
+                                max_batch=2,
                          )
 
 a,_=next(iter(Disc_dataloader))
@@ -587,7 +588,7 @@ print(model)
 print(disc)
 print()
 trainer = pl.Trainer(gpus=1,# use one GPU
-                     max_steps=80000, # iteration number
+                     max_steps=160000, # iteration number
                      benchmark=True, # faster if input batch has constant size
                      logger=comet_logger, # for writting into tensorboard
                      log_every_n_steps=100,
