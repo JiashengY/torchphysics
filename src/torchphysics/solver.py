@@ -2614,7 +2614,7 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half(pl.LightningModule):
 
                 #####generator
                 fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:],iX_start)  #######N_dist : random profiles
-                if self.n_training_step%100==0:
+                if self.n_training_step%1000==0:
                     plt.figure(figsize=(18,10))
 
                     plt.imshow(fake_profiles[0,0,:,:].detach().cpu())
