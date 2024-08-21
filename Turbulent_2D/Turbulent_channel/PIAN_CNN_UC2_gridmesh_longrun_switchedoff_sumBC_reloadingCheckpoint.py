@@ -23,21 +23,17 @@ VRMS = tp.spaces.R1('vrms')
 UV=tp.spaces.R1('uv')
 P=tp.spaces.R1('p')
 
-DF_Data=pd.read_csv("Data/Flow_3d_2289_6_Cx3_Cy3X240Y76_half.csv")
-len(DF_Data[(DF_Data.c==0)&(DF_Data.y<0.4)]["y"].unique())
 
 # GAN macros
 GPU="cuda:0"
 GAN_weight=1 # Generator weight
 L_x=3.6 # length of domain
 N_x=240 # grid in x
-N_x_sub=72
-N_y_F=76 # grid in y
-y_lim=0.50
-N_y_sub=len(DF_Data[(DF_Data.c==0)&(DF_Data.y<y_lim)]["y"].unique())
-N_dists=1 # N 1d roughness for fake images during trainingN_epochs
-N_epochs=2000 # N training iteration each epoch
+N_x_sub=80
+N_y=76 # grid in y
+N_dists=1 # N 1d roughness for fake images during training
 GP_weight=10
+N_epochs=100
 Grid_data=False
 
 
@@ -56,23 +52,22 @@ Sim_domain_sub_low=X_interval*Y_interval_sub_low*C_interval
 
 
 
-#DF_Data=pd.read_csv("Data/Flow_3d_2289_6_Cx3_Cy3X240Y76_half.csv")
-#DF=DF_Data[["U","V","urms","vrms","uv",]]
+DF_Data=pd.read_csv("Data/Flow_3d_2289_6_Cx3_Cy3X240Y76_half.csv")
+DF=DF_Data[["U","V","urms","vrms","uv",]]
 
 N_c=len(DF_Data["c"].unique()) # number of available training data
 
-DF_vincinity=DF_Data[(DF_Data.y<y_lim)]
-
-
 #Data_Pinn=torch.tensor(DF_Data[["U","V","urms","vrms","uv"]].to_numpy().transpose((1,0)).reshape((5,N_c,N_x,N_y)),dtype=torch.float32,device=GPU)
-Data_Pinn=torch.permute(torch.tensor(DF_vincinity[["U","V","urms","vrms","uv"]].to_numpy(),dtype=torch.float32,device=GPU).reshape((N_c,N_x,N_y_sub,5)),(0,3,1,2))
-
+Data_Pinn=torch.permute(torch.tensor(DF_Data[["U","V","urms","vrms","uv"]].to_numpy(),dtype=torch.float32,device=GPU).reshape((N_c,N_x,N_y,5)),(0,3,1,2))
 
 
 #eta=torch.cos(torch.pi*(torch.tensor([i for i in range(N_y*2)],requires_grad=False,device=GPU))/(N_y*2-1)) 
 
-ys=DF_vincinity["y"].unique()
-ys=torch.tensor(ys,dtype=torch.float32,device=GPU)
+if Grid_data:
+    ys=torch.linspace(0,1,N_y,dtype=torch.float32,device=GPU)
+else:
+    eta=torch.cos(torch.pi*(torch.tensor([i for i in range(N_y*2)],device=GPU))/(N_y*2-1)) 
+    ys=(1-eta.detach())[:N_y]
 
 DF_DIST=pd.read_csv("Data/dist_2289_1Ds.csv",header=None)
 x_corr=DF_DIST.iloc[0].to_numpy()
@@ -114,7 +109,7 @@ def IBM_irr_filter_low(x,y,c):
     c_new = c_new.to(torch.long)
     height=dist[c_new,position_l]+(dist[c_new,position_r]-dist[c_new,position_l])*(x_new-x_corr[position_l])/(x_corr[position_r]-x_corr[position_l])
     return (y[...,0]<=height)
-IBM_sampler_irr_low = tp.samplers.RandomUniformSampler(Sim_domain_sub_low,n_points=1000,filter_fn=IBM_irr_filter_low).make_static(resample_interval=2000)
+IBM_sampler_irr_low = tp.samplers.RandomUniformSampler(Sim_domain_sub_low,n_points=2000,filter_fn=IBM_irr_filter_low).make_static(resample_interval=1000)
 
 
 
@@ -128,16 +123,14 @@ def Inner_filter(x,y,c):
     c_new = c_new.to(torch.long)
     height=dist[c_new,position_l]+(dist[c_new,position_r]-dist[c_new,position_l])*(x_new-x_corr[position_l])/(x_corr[position_r]-x_corr[position_l])
     return (y[...,0]>height)
-inner_sampler = tp.samplers.RandomUniformSampler(Sim_domain, n_points=5000,filter_fn=Inner_filter).make_static(resample_interval=2000)#,filter_fn=Inner_filter)
+inner_sampler = tp.samplers.RandomUniformSampler(Sim_domain, n_points=2000,filter_fn=Inner_filter).make_static(resample_interval=200)#,filter_fn=Inner_filter)
 
 
 
 
-def Log_filter(x,y,c):
-    return (y[...,0]>0.5)
-log_sampler = tp.samplers.RandomUniformSampler(Sim_domain, n_points=500,filter_fn=Log_filter).make_static(resample_interval=200)#,filter_fn=Inner_filter)
 
 
+bound_sampler_low = tp.samplers.RandomUniformSampler(X_interval*Y_interval.boundary_left*C_interval, n_points=250)
 
 bound_sampler_up = tp.samplers.RandomUniformSampler(X_interval*Y_interval.boundary_right*C_interval, n_points=500)
 
@@ -154,51 +147,95 @@ def self_cos(input):
 import torch.nn as nn
 import torch.nn.functional as F
 torch.manual_seed(seed=42)
-class FCN_model_Fourier_Feature_CNN(nn.Module):
-    def __init__(self,input_space,output_space,N_features,sigma_1=1,sigma_2=15):
-        super().__init__()
+class ResidualBlock_1d(nn.Module):
+    def __init__(self, in_channels, out_channels, stride = 1, downsample = None):
+        super(ResidualBlock_1d, self).__init__()
+        self.conv1 = nn.Sequential(
+                        nn.Conv1d(in_channels, out_channels, kernel_size = 3, stride = stride, padding = 1),
+                        nn.BatchNorm1d(out_channels),
+                        nn.ReLU())
+        self.conv2 = nn.Sequential(
+                        nn.Conv1d(out_channels, out_channels, kernel_size = 3, stride = 1, padding = 1),
+                        nn.BatchNorm1d(out_channels))
+        self.downsample = downsample
+        self.relu = nn.ReLU()
+        self.out_channels = out_channels
+        
+    def forward(self, x):
+        residual = x
+        out = self.conv1(x)
+        out = self.conv2(out)
+        if self.downsample:
+            residual = self.downsample(x)
+        out += residual
+        out = self.relu(out)
+        return out
+    
+
+class ResNet1d(nn.Module):
+    def __init__(self, block, layers,input_space,output_space,N_features,sigma_1=1,sigma_2=10):
+        super(ResNet1d, self).__init__()
+        self.inplanes = 64
+        self.conv1 = nn.Sequential(
+                        nn.Conv1d(1, 64, kernel_size = 7, stride = 2, padding = 3),
+                        nn.BatchNorm1d(64),
+                        nn.ReLU())
+        self.maxpool = nn.MaxPool1d(kernel_size = 3, stride = 2, padding = 1)
+        self.layer0 = self._make_layer(block, 64, layers[0], stride = 1)
+        self.layer1 = self._make_layer(block, 64, layers[1], stride = 2)
+        self.layer2 = self._make_layer(block, 128, layers[2], stride = 2)
+        self.layer3 = self._make_layer(block, 128, layers[3], stride = 2)
+        self.avgpool = nn.AvgPool1d(2, stride=0)
+        #self.act_binary=nn.Sigmoid()
+        #self.fc_Res = nn.Linear(2048, 2)
+
         self.W_1 = torch.tensor(torch.randn(input_space.dim , N_features //2, dtype=torch.float32,device=GPU) * sigma_1, dtype=torch.float32, requires_grad=False)
         self.W_2 = torch.tensor(torch.randn(input_space.dim , N_features //2, dtype=torch.float32,device=GPU) * sigma_2, dtype=torch.float32, requires_grad=False)
         self.register_buffer("selfW1", self.W_1, persistent=False)
         self.register_buffer("selfW2", self.W_2, persistent=False)
         self.output_space=output_space
-        self.fc1_l=nn.Linear(in_features=N_features,out_features=150,device=GPU)
-        self.fc2_l=nn.Linear(in_features=150,out_features=150,device=GPU)
-        self.fc3_l=nn.Linear(in_features=150,out_features=150,device=GPU)
+        self.fc1_l=nn.Linear(in_features=N_features,out_features=150)
+        self.fc2_l=nn.Linear(in_features=150,out_features=150)
+        self.fc3_l=nn.Linear(in_features=150,out_features=150)
         ###
-        self.fc1_r=nn.Linear(in_features=N_features,out_features=150,device=GPU)
-        self.fc2_r=nn.Linear(in_features=150,out_features=150,device=GPU)
-        self.fc3_r=nn.Linear(in_features=150,out_features=150,device=GPU)
+        self.fc1_r=nn.Linear(in_features=N_features,out_features=150)
+        self.fc2_r=nn.Linear(in_features=150,out_features=150)
+        self.fc3_r=nn.Linear(in_features=150,out_features=150)
 
 
-        self.conv1=nn.Conv1d(1,5,3,stride=1,padding=1,device=GPU) #((720-3+2*1)/1)+1 *8=720 *5
-        self.act1=nn.LeakyReLU(0.1)
-        #self.pool1=nn.MaxPool1d(kernel_size=2) # stride=2   (720-2)/2 + 1 *8 = 360 *3
-        
-        self.conv2=nn.Conv1d(5,9,3,stride=1,padding=1,device=GPU) # ((720-3+2*1)/1)+1 *32 = 720*9
-        self.act2=nn.LeakyReLU(0.1)
-        #self.pool2=nn.MaxPool1d(kernel_size=2) #360*6
+        self.fc_combo1=nn.Linear(in_features=2944+300,out_features=2048)
+        self.fc_combo2=nn.Linear(in_features=2048,out_features=2048)
+        self.fc_combo3=nn.Linear(in_features=2048,out_features=2048)
 
-        self.conv3=nn.Conv1d(9,15,5,stride=3,padding=1,device=GPU) #((720-5+2*1)/3)+1 *32 = 240*15
-        self.act3=nn.LeakyReLU(0.1)
-        self.pool3=nn.MaxPool1d(kernel_size=2)# 120*9
-        self.conv4=nn.Conv1d(15,20,5,stride=3,padding=1,device=GPU) #((120-5+2*1)/3)+1 *32 = 40*20
-        self.act4=nn.LeakyReLU(0.1)
-        self.pool4=nn.MaxPool1d(kernel_size=2)# 20*20
+        self.out=nn.Linear(in_features=2048,out_features=output_space.dim)
+    def _make_layer(self, block, planes, blocks, stride=1):
+        downsample = None
+        if stride != 1 or self.inplanes != planes:
+            
+            downsample = nn.Sequential(
+                nn.Conv1d(self.inplanes, planes, kernel_size=1, stride=stride),
+                nn.BatchNorm1d(planes),
+            )
+        layers = []
+        layers.append(block(self.inplanes, planes, stride, downsample))
+        self.inplanes = planes
+        for i in range(1, blocks):
+            layers.append(block(self.inplanes, planes))
 
-        self.flat=nn.Flatten()
-        
-        self.fc_combo1=nn.Linear(in_features=400+300,out_features=512,device=GPU)
-        self.fc_combo2=nn.Linear(in_features=512,out_features=512,device=GPU)
-        self.fc_combo3=nn.Linear(in_features=512,out_features=512,device=GPU)
-        self.fc_combo4=nn.Linear(in_features=512,out_features=512,device=GPU)
-        self.fc_combo5=nn.Linear(in_features=512,out_features=512,device=GPU)
-        self.fc_combo6=nn.Linear(in_features=512,out_features=256,device=GPU)
+        return nn.Sequential(*layers)
+    
+    
+    def forward(self,x,t):
+        x = self.conv1(x)
+        x = self.maxpool(x)
+        x = self.layer0(x)
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
 
-
-        
-        self.out=nn.Linear(in_features=256,out_features=output_space.dim,device=GPU)
-    def forward(self,dist_1d,t):
+    #x = self.avgpool(x)
+        x = x.view(x.size(0), -1)
+        #x = nn.ReLU(self.fc_Res(x))
         t=t.as_tensor[:,0:2]
         t_1=torch.concat((self_sin(torch.matmul(t,self.W_1)),self_cos(torch.matmul(t,self.W_1))),1)
         t_1=self_sin(self.fc1_l(t_1))
@@ -208,21 +245,18 @@ class FCN_model_Fourier_Feature_CNN(nn.Module):
         t_2=self_sin(self.fc1_r(t_2))
         t_2=self_sin(self.fc2_r(t_2))
         t_2=self_sin(self.fc3_r(t_2))
-        t_figure=self.act1(self.conv1(dist_1d))
-        t_figure=self.act2(self.conv2(t_figure))
-        t_figure=self.pool3(self.act3(self.conv3(t_figure)))
-        t_figure=self.pool4(self.act4(self.conv4(t_figure)))
-        t=torch.concat((t_1,t_2,self.flat(t_figure)),1)
+
+        t=torch.concat((t_1,t_2,x),1)
         t=self_sin(self.fc_combo1(t))
         t=self_sin(self.fc_combo2(t))
         t=self_sin(self.fc_combo3(t))
-        t=self_sin(self.fc_combo4(t))
-        t=self_sin(self.fc_combo5(t))
-        t=self_sin(self.fc_combo6(t))
         t=self.out(t)
+
         return tp.problem.spaces.Points(t, self.output_space)
         
-model=FCN_model_Fourier_Feature_CNN(input_space=X*Y,output_space=U*V*URMS*VRMS*UV*P,N_features=300)
+#model = ResNet1d(ResidualBlock_1d,[2,2,2,2],input_space=X*Y,output_space=U*V*URMS*VRMS*UV*P,N_features=300).to(GPU)
+model=torch.load("Flat_PIAN_CNN_OPT_Wasserstein_gridmesh_log_sumBC.pt")
+
 
 class ResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride = 1, downsample = None):
@@ -263,8 +297,8 @@ class ResNet(nn.Module):
         self.layer3 = self._make_layer(block, 512, layers[3], stride = 2)
         self.avgpool = nn.AvgPool2d(3, stride=1)
         #self.act_binary=nn.Sigmoid()
-        self.fc1 = nn.Linear(3072, 4096)
-        self.fc2 = nn.Linear(4096, 4096)
+        self.fc1 = nn.Linear(4608, 4608)
+        self.fc2 = nn.Linear(4608, 4096)
         self.fc3 = nn.Linear(4096, 4096)
         self.fc4 = nn.Linear(4096, 1)
         self.relu=nn.ReLU()
@@ -302,32 +336,25 @@ class ResNet(nn.Module):
         x = self.fc4(x)
 
         return x
-disc=ResNet(ResidualBlock, [2, 2, 2, 2]).to(GPU)
+#disc=ResNet(ResidualBlock, [2, 2, 2, 2]).to(GPU)
+disc=torch.load("Disc_PIAN_log_sumBC.pt")
 
 
 
-def pde_IBM(u,v):
-    return torch.sqrt(torch.square(u)+torch.square(v))
-pde_cond_IBM_low = tp.conditions.PINNCondition_CNN(model, IBM_sampler_irr_low, pde_IBM, dist_matrix=dist,weight=50,name='IBM_low')
+def pde_IBM(u,v,urms,vrms,uv):
+    return torch.sqrt(torch.square(u)+torch.square(v))+torch.abs(urms)+torch.abs(vrms)+torch.abs(uv)
+pde_cond_IBM_low = tp.conditions.PINNCondition_CNN(model, IBM_sampler_irr_low, pde_IBM, dist_matrix=dist,weight=500,name='IBM_low')
 
 
-def pde_IBM_uu(urms,vrms,uv,p):
-    return torch.abs(urms)+torch.abs(vrms)+torch.abs(uv)
-pde_cond_IBM_low_uu = tp.conditions.PINNCondition_CNN(model, IBM_sampler_irr_low, pde_IBM_uu, dist_matrix=dist,weight=50,name='IBM_low_uu')
+#def pde_IBM_uu(urms,vrms,uv,p):
+#    return torch.abs(urms)+torch.abs(vrms)+torch.abs(uv)
+#pde_cond_IBM_low_uu = tp.conditions.PINNCondition_CNN(model, IBM_sampler_irr_low, pde_IBM_uu, dist_matrix=dist,weight=50,name='IBM_low_uu')
 
 
 
-def log_diagnostic(u,y,c):
-    c_new=torch.transpose(c,1,0)[0]
-    c_new = c_new.to(torch.long)
-    return tp.utils.grad(u,y)/(800*0.1402)*(y-torch.mean(dist[c_new,:]))*800-2.63
-pde_cond_log=tp.conditions.PINNCondition_CNN(model, log_sampler, log_diagnostic, dist_matrix=dist,weight=50,name='logarithmic')
 
-def log_diagnostic(u,y,c):
-    c_new=torch.transpose(c,1,0)[0]
-    c_new = c_new.to(torch.long)
-    return tp.utils.grad(u,y)/(800*0.1402)*(y-torch.mean(dist[c_new,:]))*800-2.63
-pde_cond_log=tp.conditions.PINNCondition_CNN(model, log_sampler, log_diagnostic, dist_matrix=dist,weight=50,name='logarithmic')
+
+
 
 
 def pde_mass(u,v,x,y):
@@ -352,103 +379,103 @@ def pde_residual_y(u,v, x, y,urms,vrms,uv,p):
 
 pde_cond_y = tp.conditions.PINNCondition_CNN(model, inner_sampler, pde_residual_y, dist_matrix=dist,weight=50,name='Momentum_y')
 
-def boundary_residual_x(u, x,y):
-    return torch.square(u) - 0.0
-boundary_cond_x = tp.conditions.PINNCondition_CNN(model, bound_sampler_low, boundary_residual_x, dist_matrix=dist, weight=1,name='noslip_x')
+#def boundary_residual_x(u, x,y):
+#    return torch.square(u) - 0.0
+#boundary_cond_x = tp.conditions.PINNCondition_CNN(model, bound_sampler_low, boundary_residual_x, dist_matrix=dist, weight=1,name='noslip_x')
 
-def boundary_residual_y(v, x,y):
-    return torch.square(v) - 0.0
+#def boundary_residual_y(v, x,y):
+#    return torch.square(v) - 0.0
 
-boundary_cond_y = tp.conditions.PINNCondition_CNN(model, bound_sampler_low, boundary_residual_y, dist_matrix=dist, weight=1,name='noslip_y')
+#boundary_cond_y = tp.conditions.PINNCondition_CNN(model, bound_sampler_low, boundary_residual_y, dist_matrix=dist, weight=1,name='noslip_y')
 
-def boundary_residual_uu(urms, x,y):
-    return torch.square(urms) - 0.0
+#def boundary_residual_uu(urms, x,y):
+#    return torch.square(urms) - 0.0
 
-boundary_cond_uu = tp.conditions.PINNCondition_CNN(model, bound_sampler_low, boundary_residual_uu, dist_matrix=dist, weight=1,name='noslip_x_uu')
+#boundary_cond_uu = tp.conditions.PINNCondition_CNN(model, bound_sampler_low, boundary_residual_uu, dist_matrix=dist, weight=1,name='noslip_x_uu')
 
-def boundary_residual_vv(vrms, x,y):
-    return torch.square(vrms) - 0.0
+#def boundary_residual_vv(vrms, x,y):
+#    return torch.square(vrms) - 0.0
 
-boundary_cond_vv = tp.conditions.PINNCondition_CNN(model, bound_sampler_low, boundary_residual_vv, dist_matrix=dist, weight=1,name='noslip_x_vv')
-
-
-
-
-def boundary_residual_uv(uv, x,y):
-    return uv - 0.0
-
-boundary_cond_uv = tp.conditions.PINNCondition_CNN(model, bound_sampler_low, boundary_residual_uv, dist_matrix=dist, weight=1,name='noslip_x_uv')
-
-def boundary_residual_x_grad(u, x,y,c):
-    un=tp.utils.grad(u,y)
-    return torch.abs(un)
-boundary_cond_x_up = tp.conditions.PINNCondition_CNN(model, bound_sampler_up, boundary_residual_x_grad, dist_matrix=dist, weight=1,name='bound_x_up')
-
-def boundary_residual_y_grad(v):
-    return torch.abs(v)
-boundary_cond_y_up = tp.conditions.PINNCondition_CNN(model, bound_sampler_up, boundary_residual_y_grad, dist_matrix=dist, weight=1,name='bound_y_up')
-
-
-def boundary_residual_Re_grad(urms,vrms, x,y,c):
-    uun=tp.utils.grad(urms,y)
-    vvn=tp.utils.grad(vrms,y)
-    return torch.abs(uun)+torch.abs(vvn)
-boundary_cond_Re_up = tp.conditions.PINNCondition_CNN(model, bound_sampler_up, boundary_residual_Re_grad, dist_matrix=dist, weight=1,name='bound_Re_up')
+#boundary_cond_vv = tp.conditions.PINNCondition_CNN(model, bound_sampler_low, boundary_residual_vv, dist_matrix=dist, weight=1,name='noslip_x_vv')
 
 
 
-def boundary_residual_uv_grad(uv, x,y,c):
-    return torch.abs(uv)
-boundary_cond_uv_up = tp.conditions.PINNCondition_CNN(model, bound_sampler_up, boundary_residual_uv_grad, dist_matrix=dist, weight=1,name='bound_uv_up')
+
+#def boundary_residual_uv(uv, x,y):
+#    return uv - 0.0
+
+#boundary_cond_uv = tp.conditions.PINNCondition_CNN(model, bound_sampler_low, boundary_residual_uv, dist_matrix=dist, weight=1,name='noslip_x_uv')
+
+def boundary_residual(u,v,urms,vrms,uv,p, x,y,c):
+    un=torch.abs(tp.utils.grad(u,y))+torch.abs(v)+torch.abs(tp.utils.grad(urms,y))+torch.abs(tp.utils.grad(vrms,y))+torch.abs(uv)+torch.abs(p)
+    return un
+boundary_cond_up = tp.conditions.PINNCondition_CNN(model, bound_sampler_up, boundary_residual, dist_matrix=dist, weight=1,name='bound_up')
+
+#def boundary_residual_y_grad(v):
+#    return torch.abs(v)
+#boundary_cond_y_up = tp.conditions.PINNCondition_CNN(model, bound_sampler_up, boundary_residual_y_grad, dist_matrix=dist, #weight=1,name='bound_y_up')
 
 
-def boundary_residual_p_grad(p, x,y,c):
-    return torch.abs(p)
-boundary_cond_p_up = tp.conditions.PINNCondition_CNN(model, bound_sampler_up, boundary_residual_p_grad, dist_matrix=dist, weight=1,name='bound_p_up')
+#def boundary_residual_Re_grad(urms,vrms, x,y,c):
+#    uun=tp.utils.grad(urms,y)
+#    vvn=tp.utils.grad(vrms,y)
+#    return torch.abs(uun)+torch.abs(vvn)
+#boundary_cond_Re_up = tp.conditions.PINNCondition_CNN(model, bound_sampler_up, boundary_residual_Re_grad, dist_matrix=dist, weight=1,name='bound_Re_up')
+
+
+
+#def boundary_residual_uv_grad(uv, x,y,c):
+#    return torch.abs(uv)
+#boundary_cond_uv_up = tp.conditions.PINNCondition_CNN(model, bound_sampler_up, boundary_residual_uv_grad, dist_matrix=dist, weight=1,name='bound_uv_up')
+
+
+#def boundary_residual_p_grad(p, x,y,c):
+#    return torch.abs(p)
+#boundary_cond_p_up = tp.conditions.PINNCondition_CNN(model, bound_sampler_up, boundary_residual_p_grad, dist_matrix=dist, weight=1,name='bound_p_up')
 
 
 
 Periodic_sampler=tp.samplers.RandomUniformSampler(Y_interval*C_interval,n_points=250).make_static(resample_interval=2000)#,filter_fn=Inner_filter)
 
 
-def periodic_residual_x(u_left,u_right):
-    Periodic_condition= u_left - u_right
+def periodic_residual(u_left,u_right,v_left,v_right,urms_left,urms_right,vrms_left,vrms_right,uv_left,uv_right,p_left,p_right):
+    Periodic_condition= torch.abs(u_left - u_right)+torch.abs(v_left - v_right)+torch.abs(urms_left - urms_right)+torch.abs(vrms_left - vrms_right)+torch.abs(uv_left - uv_right)+torch.abs(p_left - p_right)
     return Periodic_condition
-periodic_cond_x=tp.conditions.PeriodicCondition_CNN(model,X_interval,periodic_residual_x,dist_matrix=dist,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic_x')
+periodic_cond=tp.conditions.PeriodicCondition_CNN(model,X_interval,periodic_residual,dist_matrix=dist,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic')
 
 
-def periodic_residual_y(v_left,v_right):
-    Periodic_condition= v_left - v_right
-    return Periodic_condition
-periodic_cond_y=tp.conditions.PeriodicCondition_CNN(model,X_interval,periodic_residual_y,dist_matrix=dist,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic_y')
+#def periodic_residual_y(v_left,v_right):
+#    Periodic_condition= v_left - v_right
+#    return Periodic_condition
+#periodic_cond_y=tp.conditions.PeriodicCondition_CNN(model,X_interval,periodic_residual_y,dist_matrix=dist,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic_y')
 
-def periodic_residual_uu(urms_left,urms_right):
-    Periodic_condition= urms_left - urms_right
-    return Periodic_condition
-periodic_cond_uu=tp.conditions.PeriodicCondition_CNN(model,X_interval,periodic_residual_uu,dist_matrix=dist,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic_uu')
-
-
-def periodic_residual_vv(vrms_left,vrms_right):
-    Periodic_condition= vrms_left - vrms_right
-    return Periodic_condition
-periodic_cond_vv=tp.conditions.PeriodicCondition_CNN(model,X_interval,periodic_residual_vv,dist_matrix=dist,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic_vv')
+#def periodic_residual_uu(urms_left,urms_right):
+#    Periodic_condition= urms_left - urms_right
+#    return Periodic_condition
+#periodic_cond_uu=tp.conditions.PeriodicCondition_CNN(model,X_interval,periodic_residual_uu,dist_matrix=dist,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic_uu')
 
 
-def periodic_residual_uv(uv_left,uv_right):
-    Periodic_condition= uv_left - uv_right
-    return Periodic_condition
-periodic_cond_uv=tp.conditions.PeriodicCondition_CNN(model,X_interval,periodic_residual_uv,dist_matrix=dist,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic_uv')
+#def periodic_residual_vv(vrms_left,vrms_right):
+#    Periodic_condition= vrms_left - vrms_right
+#    return Periodic_condition
+#periodic_cond_vv=tp.conditions.PeriodicCondition_CNN(model,X_interval,periodic_residual_vv,dist_matrix=dist,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic_vv')
 
 
-def periodic_residual_p(p_left,p_right):
-    Periodic_condition= p_left-p_right
-    return Periodic_condition
-periodic_cond_p=tp.conditions.PeriodicCondition(model,X_interval,periodic_residual_p,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic_p')
-bound_sampler_left = tp.samplers.RandomUniformSampler(X_interval.boundary_left*Y_interval, n_points=250)
-def boundary_residual_p(p, x,y):
-    return p
+#def periodic_residual_uv(uv_left,uv_right):
+#    Periodic_condition= uv_left - uv_right
+#    return Periodic_condition
+#periodic_cond_uv=tp.conditions.PeriodicCondition_CNN(model,X_interval,periodic_residual_uv,dist_matrix=dist,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic_uv')
 
-periodic_cond_p=tp.conditions.PeriodicCondition_CNN(model,X_interval,periodic_residual_p,dist_matrix=dist,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic_p')
+
+#def periodic_residual_p(p_left,p_right):
+#    Periodic_condition= p_left-p_right
+#    return Periodic_condition
+#periodic_cond_p=tp.conditions.PeriodicCondition(model,X_interval,periodic_residual_p,non_periodic_sampler=Periodic_sampler, #weight=1,name='periodic_p')
+#bound_sampler_left = tp.samplers.RandomUniformSampler(X_interval.boundary_left*Y_interval, n_points=250)
+#def boundary_residual_p(p, x,y):
+#    return p
+
+#periodic_cond_p=tp.conditions.PeriodicCondition_CNN(model,X_interval,periodic_residual_p,dist_matrix=dist,non_periodic_sampler=Periodic_sampler, weight=1,name='periodic_p')
 
 bound_sampler_left = tp.samplers.RandomUniformSampler(X_interval.boundary_left*Y_interval*C_interval, n_points=250)
 def boundary_residual_p(p, x,y):
@@ -487,24 +514,29 @@ optim_G = tp.OptimizerSetting(torch.optim.Adam, lr=0.0001,scheduler_class=torch.
 optim_D = tp.OptimizerSetting(torch.optim.Adam, lr=0.0001,scheduler_class=torch.optim.lr_scheduler.ReduceLROnPlateau,scheduler_args={"patience":10000,"factor":0.8,"verbose":True,"min_lr":0.000005},monitor_lr="train/D_loss")
 #solver = tp.solver.Solver([pde_cond_IBM,pde_cond_mass,boundary_cond_x, pde_cond_x,periodic_cond_x,boundary_cond_y, pde_cond_y,periodic_cond_y], optimizer_setting=optim)
 ##loss terms scheduling
-list_of_Losses=[         pde_cond_log,
-                pde_cond_IBM_low,
-                           pde_cond_IBM_low_uu,
-                           periodic_cond_x,#2000
-                           periodic_cond_y,
-                           periodic_cond_uu,#2000
-                           periodic_cond_vv,
-                           periodic_cond_uv,
-                           periodic_cond_p,
-                           boundary_cond_x_up,
-                           boundary_cond_y_up,
-                           boundary_cond_Re_up,
-                           boundary_cond_uv_up,
-                           boundary_cond_p_up,
+list_of_Losses=[          pde_cond_IBM_low,
+                           #pde_cond_IBM_low_uu,
+                           #boundary_cond_x,#1000
+                           #boundary_cond_y,
+                           #boundary_cond_uu,#1000
+                           #boundary_cond_vv,
+                           #boundary_cond_uv,
+                           #boundary_cond_p,
+                           periodic_cond,#2000
+                           #periodic_cond_y,
+                           #periodic_cond_uu,#2000
+                           #periodic_cond_vv,
+                           #periodic_cond_uv,
+                           #periodic_cond_p,
+                           boundary_cond_up,
+                           #boundary_cond_y_up,
+                           #boundary_cond_Re_up,
+                           #boundary_cond_uv_up,
+                           #boundary_cond_p_up,
                            pde_cond_x,#5000
                            pde_cond_y,#5000
                            pde_cond_mass]
-solver = tp.solver.PIAN_Solver_CNN_Wasserstein_LowMem_half_logarithmic(list_of_Losses,#1000
+solver = tp.solver.PIAN_Solver_CNN_Wasserstein_LowMem_half(list_of_Losses,#1000
                                generator=model,
                                discriminator=disc,
                           optimizer_setting_G=optim_G,
@@ -527,14 +559,15 @@ solver = tp.solver.PIAN_Solver_CNN_Wasserstein_LowMem_half_logarithmic(list_of_L
                                    disc_space=U*V*URMS*VRMS*UV,
                                    N_dist=N_dists,## number of 1d roughness -> N 2d flow fileds
                                    L_x=L_x,
-                                    ys=ys,
                                    N_x=N_x,
-                                   N_y=N_y_sub,
+                                   N_y=N_y,
                                    dist_repository=repo_dist[:,None,:],
                                    dist_repository_low=dist_new[:,None,:],
                                 gpu=GPU,
                                 N_x_sub=N_x_sub,
                                 dataset_CNN=dataset_turbulent,
+                                Grid_data=Grid_data,
+                                max_batch=2,
                          )
 
 a,_=next(iter(Disc_dataloader))
@@ -551,11 +584,14 @@ plt.imshow(a[0,4,0:N_x_sub,:].detach().cpu())
 plt.colorbar()
 plt.savefig(f"Figs/PIAN_Lowmem/uv_snapshot_Real.png")
 plt.close()
-
 torch.set_float32_matmul_precision('medium')
 comet_logger = pl_loggers.CSVLogger(save_dir="logs/")
-trainer = pl.Trainer(gpus=1,# use one GPU
-                     max_steps=50000, # iteration number
+print(model)
+print(disc)
+print()
+trainer = pl.Trainer(accelerator='gpu',
+                     devices=[0, 1, 2, 3],
+                     max_steps=80000, # iteration number
                      benchmark=True, # faster if input batch has constant size
                      logger=comet_logger, # for writting into tensorboard
                      log_every_n_steps=100,
@@ -566,7 +602,8 @@ trainer = pl.Trainer(gpus=1,# use one GPU
 trainer.fit(solver)#,train_dataloaders=Disc_dataloader)
 
 
-torch.save(model,"Flat_PIAN_CNN_OPT_Wasserstein_gridmesh.pt")
+torch.save(model,"Flat_PIAN_CNN_OPT_Wasserstein_gridmesh_log_sumBC.pt")
+torch.save(disc,"Disc_PIAN_log_sumBC.pt")
 
 
 
