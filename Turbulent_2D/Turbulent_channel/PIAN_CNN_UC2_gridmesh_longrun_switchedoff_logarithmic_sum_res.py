@@ -53,11 +53,11 @@ x_corr_new=torch.tensor(x_corr_new,requires_grad=False, dtype=torch.float32,devi
 x_corr=torch.tensor(x_corr,requires_grad=False, dtype=torch.float32,device=GPU)
 dist_repo_low=torch.tensor(dist_repo_low,requires_grad=False, dtype=torch.float32,device=GPU)
 dist_repo=torch.tensor(dist_repo, requires_grad=False,dtype=torch.float32,device=GPU)
-N_c=len(dist_repo)
+N_c_train=len(dist_repo)
 
 X_interval = tp.domains.Interval(X, 0, L_x) # <-add the bounds of the Interval (0, 2)
 Y_interval = tp.domains.Interval(Y, 0, 1.0)
-C_interval = tp.domains.Interval(C,0,N_c) # number of available roughness profiles
+C_interval = tp.domains.Interval(C,0,N_c_train) # number of available roughness profiles
 
 Sim_domain = X_interval*Y_interval*C_interval
 
@@ -72,9 +72,9 @@ Sim_domain_sub_low=X_interval*Y_interval_sub_low*C_interval
 #DF_Data=pd.read_csv("Data/Flow_3d_2289_6_Cx3_Cy3X240Y76_half.csv")
 #DF=DF_Data[["U","V","urms","vrms","uv",]]
 
-if len(DF_Data["c"].unique())!=N_c:
-    assert "mismatched case number"# number of available training data
-
+#if len(DF_Data["c"].unique())!=N_c:
+#    assert "mismatched case number"# number of available training data
+N_c=len(DF_Data["c"].unique()) # number of available training data
 DF_vincinity=DF_Data[(DF_Data.y<y_lim)]
 
 
