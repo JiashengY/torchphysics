@@ -270,7 +270,6 @@ class ResNet1d(nn.Module):
 model = ResNet1d(ResidualBlock_1d,[2,2,2,2],input_space=X*Y,output_space=U*V*URMS*VRMS*UV*P,N_features=300).to(GPU)
 
 
-
 class ResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels, stride = 1, downsample = None):
         super(ResidualBlock, self).__init__()
@@ -352,7 +351,6 @@ class ResNet(nn.Module):
 disc=ResNet(ResidualBlock, [2, 2, 2, 2]).to(GPU)
 
 
-
 def pde_IBM(u,v):
     return torch.sqrt(torch.square(u)+torch.square(v))
 pde_cond_IBM_low = tp.conditions.PINNCondition_CNN(model, IBM_sampler_irr_low, pde_IBM, dist_matrix=dist_repo,weight=100,name='IBM_low')
@@ -361,7 +359,7 @@ pde_cond_IBM_low = tp.conditions.PINNCondition_CNN(model, IBM_sampler_irr_low, p
 def log_diagnostic(u,y,c):
     c_new=torch.transpose(c,1,0)[0]
     c_new = c_new.to(torch.long)
-    utau=800/((1-torch.mean(dist[c_new,:]))*6000)
+    utau=800/((1-torch.mean(dist_repo[c_new,:]))*6000)
     return tp.utils.grad(u,y)/(800*utau)*(y-torch.mean(dist_repo[c_new,:]))*800-1/0.4
 pde_cond_log=tp.conditions.PINNCondition_CNN(model, log_sampler, log_diagnostic, dist_matrix=dist_repo,weight=50,name='logarithmic')
 

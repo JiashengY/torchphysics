@@ -361,7 +361,7 @@ pde_cond_IBM_low = tp.conditions.PINNCondition_CNN(model, IBM_sampler_irr_low, p
 def log_diagnostic(u,y,c):
     c_new=torch.transpose(c,1,0)[0]
     c_new = c_new.to(torch.long)
-    utau=800/((1-torch.mean(dist[c_new,:]))*6000)
+    utau=800/((1-torch.mean(dist_repo[c_new,:]))*6000)
     return tp.utils.grad(u,y)/(800*utau)*(y-torch.mean(dist_repo[c_new,:]))*800-1/0.4
 pde_cond_log=tp.conditions.PINNCondition_CNN(model, log_sampler, log_diagnostic, dist_matrix=dist_repo,weight=50,name='logarithmic')
 
