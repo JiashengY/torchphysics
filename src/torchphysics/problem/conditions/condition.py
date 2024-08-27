@@ -1343,15 +1343,15 @@ class SingleModuleCondition_CNN_image_query(Condition):
         else:
             x = self.sampler.sample_points(device=device)
         C_Cases=x.coordinates["c"].unique()
-        unreduced_loss=torch.tensor([],dtype=torch.float32,requires_grad=True)
+        unreduced_loss=torch.tensor([],dtype=torch.float32,requires_grad=True,device=device)
         for iter_C in C_Cases:
-            x_coordinates, x_in = x[[[x.coordinates["c"]==iter_C]]].track_coord_gradients()
+            x_coordinates, x_in = x[[(x.coordinates["c"]==iter_C).reshape(-1)]].track_coord_gradients()
 
             data = {}
             for fun in self.data_functions:
                 data[fun] = self.data_functions[fun](x_coordinates)
         
-            dist_1d= self.dist[iter_C.to(torch.long),:][None,:,:]
+            dist_1d= self.dist[iter_C.to(torch.long),:][None,None,:]
             feature=self.module.filter(dist_1d)
             #output=torch.cat((output,torch.permute(self.module.qurey(x_in,feature).as_tensor[:,0:5].reshape((1,self.N_x_sub,self.N_y,5)),(0,3,1,2))),0)
             y = self.module.query(x_in,feature)
@@ -1530,7 +1530,7 @@ class PeriodicCondition_CNN_image_query(Condition):
             x_left_coordinates, x_in_left = x_left[[[x_left.coordinates["c"]==iter_C]]].track_coord_gradients()
 
         
-            dist_1d= self.dist[iter_C.to(torch.long),:][None,:,:]
+            dist_1d= self.dist[iter_C.to(torch.long),:][None,None,:]
             feature=self.module.filter(dist_1d)
             #output=torch.cat((output,torch.permute(self.module.qurey(x_in,feature).as_tensor[:,0:5].reshape((1,self.N_x_sub,self.N_y,5)),(0,3,1,2))),0)
             y_left = self.module.query(x_in_left,feature)

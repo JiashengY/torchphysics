@@ -22,7 +22,9 @@ from .condition import (Condition,
                         DataCondition_CNN,
                         PINNCondition_CNN,
                         SingleModuleCondition_CNN,
-                        PeriodicCondition_CNN)
+                        PeriodicCondition_CNN,
+                        PINNCondition_CNN_image_query,
+                        SingleModuleCondition_CNN_image_query)
 
 from .deeponet_condition import (DeepONetSingleModuleCondition, 
                                  PIDeepONetCondition, 

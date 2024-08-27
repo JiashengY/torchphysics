@@ -3058,7 +3058,7 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half_logarithmic_image_query(pl.Lightni
                 meshx=meshx.reshape((-1,1))
                 meshy=meshy.reshape((-1,1))
                 self.N_dist=self.trainer.current_epoch+1
-                self.coords = torch.tensor(torch.concat((meshx,meshy),axis=1).expand((self.N_dist,self.N_x_sub*self.N_y,2)).reshape((self.N_x_sub*self.N_y*self.N_dist,2)),dtype=torch.float32,device=self.device)
+                self.coords = torch.tensor(torch.concat((meshx,meshy),axis=1).expand((1,self.N_x_sub*self.N_y,2)).reshape((self.N_x_sub*self.N_y,2)),dtype=torch.float32,device=self.device)
             self.Dataset.length=self.Dataset.N_epochs*self.N_dist
             return torch.utils.data.DataLoader(self.Dataset,batch_size=self.trainer.current_epoch+1,shuffle=True,drop_last=True)
         else:
@@ -3441,20 +3441,20 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half_logarithmic_image_query(pl.Lightni
         #output=torch.zeros((len(dist)),self.disc_space.dim+1,self.N_x,self.N_y)
         #if iX_start<(self.N_x-self.N_x_sub):
         #iX_start=self.N_x-self.N_x_sub-2
-        output=torch.zeros((1,5,self.N_x_sub,self.N_y))
+        output=torch.tensor([],dtype=torch.float32,requires_grad=True,device=self.device)
         for iter in range(self.N_dist): 
             x_start=torch.cat((self.list_x[iX_start[iter]].expand((1,self.N_x_sub*self.N_y)).reshape((-1,1)),torch.zeros(self.N_x_sub*self.N_y,1,device=self.device)),dim=1)
             #dist_input=dist.expand(self.N_x_sub*self.N_y,self.N_dist,1,dist.shape[2]).transpose(1,0).reshape((-1,1,dist.shape[2]))
             dist_input=dist[iter,:]
             feature=self.generator.filter(dist_input[None,:,:])
-            output=torch.cat((output,torch.permute(self.generator.qurey(Points(self.coords+x_start, self.co_sys),feature).as_tensor[:,0:5].reshape((1,self.N_x_sub,self.N_y,5)),(0,3,1,2))),0)
+            output=torch.cat((output,torch.permute(self.generator.query(Points(self.coords+x_start, self.co_sys),feature).as_tensor[:,0:5].reshape((1,self.N_x_sub,self.N_y,5)),(0,3,1,2))),0)
         #output=torch.permute(self.generator(dist_input,Points(self.coords+x_start, self.co_sys)).as_tensor[:,0:5].reshape((self.N_dist,self.N_x_sub,self.N_y,5)),(0,3,1,2))
         #output=torch.permute(self.generator(dist_input,Points(self.coords, self.co_sys)).as_tensor[:,0:5].reshape((5,self.N_y,self.N_x,self.N_dist)),(3,0,2,1))
         #for i in range(len(dist)):
         #    output[i,0:self.disc_space.dim,:,:]=self.generator(dist[i].expand(len(self.N_x*self.N_y),-1),Points(self.coords, self.co_sys)).reshape((self.disc_space.dim,self.N_y,self.N_x).transpose((0,2,1)))
         #output=torch.cat(output,self.construct_mask(dist),1)
         #output=output[1:,...]
-        return torch.cat((output[1:,...],self.construct_mask(dist_low,iX_start)),1)
+        return torch.cat((output,self.construct_mask(dist_low,iX_start)),1)
 
     
 
