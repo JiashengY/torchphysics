@@ -4001,7 +4001,9 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half_logarithmic(pl.LightningModule):
             #iX_start=self.N_x-self.N_x_sub-2
         x_start=torch.cat((self.list_x[iX_start].expand((self.N_dist,self.N_x_sub*self.N_y)).reshape((-1,1)),torch.zeros(self.N_dist*self.N_x_sub*self.N_y,1,device=self.device)),dim=1)
         dist_input=dist.expand(self.N_x_sub*self.N_y,self.N_dist,1,dist.shape[2]).transpose(1,0).reshape((-1,1,dist.shape[2]))
+        self.generator.eval()
         output=torch.permute(self.generator(dist_input,Points(self.coords+x_start, self.co_sys)).as_tensor[:,0:5].reshape((self.N_dist,self.N_x_sub,self.N_y,5)),(0,3,1,2))
+        self.generator.train()
         #output=torch.permute(self.generator(dist_input,Points(self.coords, self.co_sys)).as_tensor[:,0:5].reshape((5,self.N_y,self.N_x,self.N_dist)),(3,0,2,1))
         #for i in range(len(dist)):
         #    output[i,0:self.disc_space.dim,:,:]=self.generator(dist[i].expand(len(self.N_x*self.N_y),-1),Points(self.coords, self.co_sys)).reshape((self.disc_space.dim,self.N_y,self.N_x).transpose((0,2,1)))
