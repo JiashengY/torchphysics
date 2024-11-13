@@ -3513,43 +3513,43 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half_logarithmic(pl.LightningModule):
         optimizing, see :class:`OptimizerSetting`.
     """
     def __init__(self,
-                 train_conditions,
-                                  generator,
-                 discriminator,
-                 co_sys,
-                 disc_space,
-                 dist_repository,
-                 dist_repository_low,
-                 ys,
-                dataset_CNN,
+                 train_conditions, # The PINN conditions
+                 generator, # PINNs model for prediction
+                 discriminator, # critic for evaluating generator' output and compare with DNS data
+                 co_sys, # The coordinate system in this problem e.g. X*Y
+                 disc_space,  # The components critic is going to check e.g. U*V*W*URMS...
+                 dist_repository, # the repository of non-labeled roughness topographies for generator
+                 dist_repository_low, # the same repostiory but lower resolution for generating flow field images for critic.
+                 ys, # Distribution of y mesh points
+                dataset_CNN, # training DNS data set for critic
                  val_conditions=(),
                  optimizer_setting_G=OptimizerSetting(torch.optim.Adam,
-                                                    1e-3),
+                                                    1e-3),# The optimizer configuration for generator (G)
                  optimizer_setting_D=OptimizerSetting(torch.optim.Adam,
-                                                    1e-3),
-                 loss_function_schedule=[{ ##############Modified JY#####################
+                                                    1e-3),# The optimizer configuration for Critic/discriminator (D)
+                 loss_function_schedule=[{ 
                         "conditions":[],
                         "max_iter":-1
                     }
-                ],
-                 weight_tunning=True,
+                ],# Initial loss function schedulling current default setting lead to consideration of all conditions in "train_conditions"
+                 weight_tunning=True,# enabelling on-the-fly weight tunning method _ReLoBRALO
                  weight_tunning_parameters={
                      "alfa":0.99,
                      "E_rho":0.99,
                      "Temperature":1,
                      "tunning_every_n_steps":100
                  },
-                 GAN_weight=1000,
-                 N_dist=20,### number of 1d roughness
+                 GAN_weight=1, # weight of critic
+                 N_dist=1,### number of 1d roughness at the first step (after that it will increase with epoch to hit max_batch)
                  L_x=3.6, ####### lenght of domain
                  N_x=300, ####### n points in x direction for generator
                  N_x_sub=40, ###### n points in x directin for discriminator (sub domain)
-                 N_y=150, ####### n points in y direction for generator actually N_y_sub
-                 N_iter_discriminator=5,
-                 gp_weight=10,
-                 gpu="cuda:0",
-                 Log_dir="runs/",
-                 max_batch=4):######################################################################
+                 N_y=150, ####### n points in y direction for generator and discriminator
+                 N_iter_discriminator=5, # number of critic updates for 1 genertor update (not implemented)
+                 gp_weight=10,# Gradient penalty
+                 gpu="cuda:0", 
+                 Log_dir="runs/", # place to save log files
+                 max_batch=4):# The maximum number of generated flow filed images (not too big due to VRAM limitation)
         super().__init__()
         self.writer_loss=SummaryWriter(Log_dir)
         self.writer_generator=SummaryWriter(Log_dir)
@@ -3566,17 +3566,17 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half_logarithmic(pl.LightningModule):
         self.N_y=N_y
         self.optimizer_setting_G = optimizer_setting_G
         self.list_x=torch.linspace(0,L_x,N_x,device=gpu)
-        #############################
+        self.train_conditions = nn.ModuleList(train_conditions)
+        self.val_conditions = nn.ModuleList(val_conditions)
+        self.repo=dist_repository
+        ############Discriminator#################
         self.discriminator=discriminator
         self.disc_space=disc_space
         self.gp_weight=gp_weight
         self.optimizer_setting_D = optimizer_setting_D
         self.sub_iter_discriminator=N_iter_discriminator
-        self.train_conditions = nn.ModuleList(train_conditions)
-        self.val_conditions = nn.ModuleList(val_conditions)
-        self.repo=dist_repository
         self.repo_low=dist_repository_low
-        ############################## Modified JY ######################################
+        ############################## generate CNN pixle points ######################################
         self.ys=ys
         self.ymesh=ys.reshape((1,1,1,-1)).expand((1,1,self.N_x_sub,-1))
         with torch.no_grad():
@@ -3584,8 +3584,8 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half_logarithmic(pl.LightningModule):
             meshx=meshx.reshape((-1,1))
             meshy=meshy.reshape((-1,1))
             self.coords = torch.tensor(torch.concat((meshx,meshy),axis=1).expand((self.N_dist,self.N_x_sub*self.N_y,2)).reshape((self.N_x_sub*self.N_y*self.N_dist,2)),dtype=torch.float32,device=gpu)
-        ## produce CNN coordinates
         
+        ###multible weight tunning######
         self.loss_function_schedule=loss_function_schedule
         self.weight_tunning=weight_tunning
         if self.weight_tunning:
@@ -3614,15 +3614,17 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half_logarithmic(pl.LightningModule):
     #    # HACK: create an empty trivial dataloader, since real data is loaded
     #    # in conditions
         #Batch_size=self.trainer.current_epoch
+
+        # JY: gradually increase batch size for GAN part, otherwise would crash (?)
         if self.trainer.current_epoch< self.max_batch:
             with torch.no_grad():
                 meshx,meshy=torch.meshgrid(self.list_x[0:self.N_x_sub],self.ys)
                 meshx=meshx.reshape((-1,1))
                 meshy=meshy.reshape((-1,1))
-                self.N_dist=self.trainer.current_epoch+1
+                self.N_dist=self.trainer.current_epoch+1 #number of generated images gradually increase with epoch
                 self.coords = torch.tensor(torch.concat((meshx,meshy),axis=1).expand((self.N_dist,self.N_x_sub*self.N_y,2)).reshape((self.N_x_sub*self.N_y*self.N_dist,2)),dtype=torch.float32,device=self.device)
             self.Dataset.length=self.Dataset.N_epochs*self.N_dist
-            return torch.utils.data.DataLoader(self.Dataset,batch_size=self.trainer.current_epoch+1,shuffle=True,drop_last=True)
+            return torch.utils.data.DataLoader(self.Dataset,batch_size=self.trainer.current_epoch+1,shuffle=True,drop_last=True) # redefine dataloader for critic
             #return torch.utils.data.DataLoader(self.Dataset,batch_size=5,shuffle=True,drop_last=True)  #### avoid too little training data for Critic (Batchnorm)
         else:
             return torch.utils.data.DataLoader(self.Dataset,batch_size=self.max_batch,shuffle=True,drop_last=True)
@@ -3672,7 +3674,7 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half_logarithmic(pl.LightningModule):
             self.train_conditions[train_conditions_index[i]].weight=(self.alfa*(rho*self.train_conditions[train_conditions_index[i]].base_weight+(1-rho)*lambda_bal_init[i])+(1-self.alfa)*lambda_bal[i]).item()
             self.log(f'weight/{self.train_conditions[train_conditions_index[i]].name}', self.train_conditions[train_conditions_index[i]].weight)
         
-    def _baseweight_tunner(self,list_cond_loss,train_conditions_index):
+    def _baseweight_tunner(self,list_cond_loss,train_conditions_index): # Bad idea, deprecated
         m=len(list_cond_loss)
         for i in range(m):
             factor=torch.bernoulli(torch.tensor(0.2)).item()
@@ -3686,27 +3688,27 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half_logarithmic(pl.LightningModule):
 
 
     def training_step(self, batch, batch_idx,optimizer_idx): ####################### modified JY ################################
-        real_profiles,_=batch
-        start_idx=torch.randint(self.N_x-self.N_x_sub-2,(1,1),device=self.device)
-        real_profiles=real_profiles[:,:,start_idx:start_idx+self.N_x_sub,:]
-        loss = torch.zeros(1, requires_grad=True, device=self.device)
-        ######### first set of loss functions #######
-        if self.n_training_step<=self.loss_function_schedule[0]["max_iter"]:   
-            train_conditions_index=self.loss_function_schedule[0]["conditions"]
-            if optimizer_idx==0:
+        real_profiles,_=batch # read new batch of real images
+        start_idx=torch.randint(self.N_x-self.N_x_sub-2,(1,1),device=self.device) # randomly select the position of the sliding window for Critic on realistic images
+        real_profiles=real_profiles[:,:,start_idx:start_idx+self.N_x_sub,:]# crop the real images to fit the window size
+        loss = torch.zeros(1, requires_grad=True, device=self.device)# initiallizing loss
+        ######### start training #######
+        if self.n_training_step<=self.loss_function_schedule[0]["max_iter"]:   ###################################################if training step is 1 then use the first set of conditions  
+            train_conditions_index=self.loss_function_schedule[0]["conditions"] ### read the first set of conditions
+            if optimizer_idx==0: #optimizer index 0 -> optimiter for generator (see configure_optimizer method below to check which index is which)
                 if self.n_training_step==0:
                     self.list_cond_loss_his_init=[]
                     self.list_cond_loss_his=[]
                     for i in self.train_conditions:
                         i.base_weight=i.weight
                     #i.weight=1
-                    for condition in [self.train_conditions[j] for j in train_conditions_index]:
+                    for condition in [self.train_conditions[j] for j in train_conditions_index]: # looping across current set of conditions
                         cond_loss =  condition(device=self.device, iteration=self.n_training_step)
                         self.log(f'train/{condition.name}', cond_loss)
                         #self.writer_loss(f'train/{condition.name}', cond_loss)
-                        loss = loss + condition.base_weight*cond_loss
+                        loss = loss + condition.base_weight*cond_loss # adding losses with weights
                         #self.train_conditions[i].weight=1
-                        self.list_cond_loss_his_init.append(cond_loss)
+                        self.list_cond_loss_his_init.append(cond_loss) # logging loss history
                         self.list_cond_loss_his=self.list_cond_loss_his_init
                         list_cond_loss=self.list_cond_loss_his_init
                 else:
@@ -3718,17 +3720,17 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half_logarithmic(pl.LightningModule):
                         list_cond_loss.append(cond_loss)
                         #if self.n_training_step%100<=5:
                             #self.writer_loss(f'train/{condition.name}', cond_loss)
-                    if self.weight_tunning & (self.n_training_step%self.nsteps==0):
+                    if self.weight_tunning & (self.n_training_step%self.nsteps==0): # update weights
                         self._ReLoBRALO(list_cond_loss,train_conditions_index)
                 self.list_cond_loss_his=list_cond_loss
                 self.log('train/PINN_loss', loss)
                 self.n_training_step += 1
-                positions=sample(range(len(self.repo)),self.N_dist)         
-                iX_start=torch.randint(self.N_x-self.N_x_sub-2,(self.N_dist,1),device=self.device)
+                positions=sample(range(len(self.repo)),self.N_dist)    # randomly select $N_dist number of roughness for generating flow images from repo
+                iX_start=torch.randint(self.N_x-self.N_x_sub-2,(self.N_dist,1),device=self.device) # randomly select the starting position of sliding window for Critic on the generated images
 
                 #####generator
-                fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:],iX_start)  #######N_dist : random profiles
-                if self.n_training_step%1000==0:
+                fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:],iX_start)  #######generate imagesc with generator using forward method
+                if self.n_training_step%1000==0: # outputting generated images for monitoring each 1000 steps
                     plt.figure(figsize=(18,10))
 
                     plt.imshow(fake_profiles[0,0,:,:].detach().cpu())
@@ -3747,32 +3749,32 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half_logarithmic(pl.LightningModule):
                     plt.colorbar()
                     plt.savefig(f"Figs/PIAN_Lowmem/uv_snapshot_{self.n_training_step}.png")
                     plt.close()
-                y_hat=self.discriminator(fake_profiles)
+                y_hat=self.discriminator(fake_profiles) # let discriminator evaluate the generated imagess  -inf= bad    inf=good
                 #y=torch.ones(len(positions),1)
-                g_loss=-y_hat.mean()
+                g_loss=-y_hat.mean() # loss function for generator
                 self.log('train/G_loss', g_loss)
                 #if self.n_training_step%100<=5:
                     #self.writer_loss('train/G_loss', g_loss)
-                loss=loss+self.GAN_weight*g_loss
+                loss=loss+self.GAN_weight*g_loss # add weighted loss together
                 self.log("train/model_loss",loss)
             #if self.n_training_step%1000==0:
                 #self._baseweight_tunner()
-            elif optimizer_idx>=1:
+            elif optimizer_idx>=1: # optimizing critic 
                 #print(f"optimizing critic step {optimizer_idx}")
 
-                positions=sample(range(len(self.repo)),self.N_dist)
-                iX_start=torch.randint(self.N_x-self.N_x_sub-2,(self.N_dist,1),device=self.device)
+                positions=sample(range(len(self.repo)),self.N_dist) # randomly select $N_dist number of roughness for generating flow images from repo
+                iX_start=torch.randint(self.N_x-self.N_x_sub-2,(self.N_dist,1),device=self.device) # randomly select the starting position of sliding window for Critic on the generated images
 
-                y_hat_real=self.discriminator(real_profiles)
+                y_hat_real=self.discriminator(real_profiles) # let discriminator evaluate real images
                 #y_real=torch.ones(real_profiles.shape[0],1)
-                real_loss=y_hat_real.mean()
-                fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:],iX_start).detach()
-                y_hat_fake=self.discriminator(fake_profiles)
+                real_loss=y_hat_real.mean() # loss for evaluating real images
+                fake_profiles=self(self.repo[positions,:],self.repo_low[positions,:],iX_start).detach()# generate figures, we do not want update generator, thus detach()
+                y_hat_fake=self.discriminator(fake_profiles) # let discriminator evaluate fake images
                 #y_fake=torch.zeros(len(positions),1)
-                fake_loss=y_hat_fake.mean()
-                gradient_penalty = self._gradient_penalty(real_profiles, fake_profiles)
+                fake_loss=y_hat_fake.mean()# loss for evaluating fake images
+                gradient_penalty = self._gradient_penalty(real_profiles, fake_profiles) # incorporate gradient penalty
                 self.log('train/GP_loss', gradient_penalty)
-                d_loss=-(real_loss-fake_loss)/2+gradient_penalty
+                d_loss=-(real_loss-fake_loss)/2+gradient_penalty #update loss for critic
                 self.log('train/D_loss', -(real_loss-fake_loss)/2)
                 #if self.n_training_step%100<=5:
                     #self.writer_loss('train/D_loss', d_loss)
@@ -3987,30 +3989,30 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half_logarithmic(pl.LightningModule):
         for input_name in self.optimizer_setting_D.scheduler_args:
             lr_scheduler_D[input_name] = self.optimizer_setting_D.scheduler_args[input_name]
         #return [optimizer_G,optimizer_D,optimizer_D,optimizer_D,optimizer_D,optimizer_D], [lr_scheduler_G,lr_scheduler_D,lr_scheduler_D,lr_scheduler_D,lr_scheduler_D,lr_scheduler_D]
-        return [optimizer_G,optimizer_D,optimizer_D,optimizer_D], [lr_scheduler_G,lr_scheduler_D,lr_scheduler_D,lr_scheduler_D]
+        return [optimizer_G,optimizer_D,optimizer_D,optimizer_D], [lr_scheduler_G,lr_scheduler_D,lr_scheduler_D,lr_scheduler_D] # lists of optimizers to be called for each round of learning
 
-    def construct_mask(self,dist_1d,iX_start):
+    def construct_mask(self,dist_1d,iX_start): ## the 0-1 mask for critic to distinguish fluids and roughness
         #print(dist_1d[0,0,:],iX_start[0],self.N_x_sub)
         matrix_mask=(dist_1d[0,0,iX_start[0]:(iX_start[0]+self.N_x_sub)].reshape((1,1,self.N_x_sub,1))> self.ymesh).long()+(dist_1d[0,0,iX_start[0]:(iX_start[0]+self.N_x_sub)].reshape((1,1,self.N_x_sub,1))> (2- self.ymesh)).long()
         for i in range(1,self.N_dist):
             matrix_mask=torch.cat((matrix_mask,(dist_1d[i,0,iX_start[i]:(iX_start[i]+self.N_x_sub)].reshape((1,1,self.N_x_sub,1))> self.ymesh).long()+(dist_1d[i,0,iX_start[i]:(iX_start[i]+self.N_x_sub)].reshape((1,1,self.N_x_sub,1))> (2- self.ymesh)).long()),dim=0)
         #matrix_mask=(dist_1d[iX_start:(iX_start+self.N_x_sub)].reshape((self.N_dist,1,self.N_x_sub,1))> self.ymesh).long()+(dist_1d.reshape((self.N_dist,1,self.N_x_sub,1))> (2- self.ymesh)).long() ### roughness:True void:False
         return matrix_mask
-    def forward(self,dist,dist_low,iX_start):
+    def forward(self,dist,dist_low,iX_start): 
         #ys=np.linspace(0,2,self.N_points)
         #output=torch.zeros((len(dist)),self.disc_space.dim+1,self.N_x,self.N_y)
         #if iX_start<(self.N_x-self.N_x_sub):
             #iX_start=self.N_x-self.N_x_sub-2
-        x_start=torch.cat((self.list_x[iX_start].expand((self.N_dist,self.N_x_sub*self.N_y)).reshape((-1,1)),torch.zeros(self.N_dist*self.N_x_sub*self.N_y,1,device=self.device)),dim=1)
-        dist_input=dist.expand(self.N_x_sub*self.N_y,self.N_dist,1,dist.shape[2]).transpose(1,0).reshape((-1,1,dist.shape[2]))
-        self.generator.eval()
-        output=torch.permute(self.generator(dist_input,Points(self.coords+x_start, self.co_sys)).as_tensor[:,0:5].reshape((self.N_dist,self.N_x_sub,self.N_y,5)),(0,3,1,2))
-        self.generator.train()
+        x_start=torch.cat((self.list_x[iX_start].expand((self.N_dist,self.N_x_sub*self.N_y)).reshape((-1,1)),torch.zeros(self.N_dist*self.N_x_sub*self.N_y,1,device=self.device)),dim=1) # calculating and expanding the dimension of starting x position of the image window, there are no y-offsets, thus zeros
+        dist_input=dist.expand(self.N_x_sub*self.N_y,self.N_dist,1,dist.shape[2]).transpose(1,0).reshape((-1,1,dist.shape[2])) # repeating roughness for $N_x_sub*$N_y times for the predicitons at each pixle
+        self.generator.eval() # turn off running statistics of Batchnorm layer in the CNN part of the generator, these layers will fail the generator
+        output=torch.permute(self.generator(dist_input,Points(self.coords+x_start, self.co_sys)).as_tensor[:,0:5].reshape((self.N_dist,self.N_x_sub,self.N_y,5)),(0,3,1,2)) # perform prediction and reformulate to images of desired dimensions
+        self.generator.train()# turn on running statistics of Batchnorm layer
         #output=torch.permute(self.generator(dist_input,Points(self.coords, self.co_sys)).as_tensor[:,0:5].reshape((5,self.N_y,self.N_x,self.N_dist)),(3,0,2,1))
         #for i in range(len(dist)):
         #    output[i,0:self.disc_space.dim,:,:]=self.generator(dist[i].expand(len(self.N_x*self.N_y),-1),Points(self.coords, self.co_sys)).reshape((self.disc_space.dim,self.N_y,self.N_x).transpose((0,2,1)))
         #output=torch.cat(output,self.construct_mask(dist),1)
-        return torch.cat((output,self.construct_mask(dist_low,iX_start)),1)
+        return torch.cat((output,self.construct_mask(dist_low,iX_start)),1)# finally formulate imagesc for critic i.e. add one layer of roughness-fluid mask
 
     
 
