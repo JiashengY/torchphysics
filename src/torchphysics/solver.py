@@ -3622,9 +3622,11 @@ class PIAN_Solver_CNN_Wasserstein_LowMem_half_logarithmic(pl.LightningModule):
                 self.N_dist=self.trainer.current_epoch+1
                 self.coords = torch.tensor(torch.concat((meshx,meshy),axis=1).expand((self.N_dist,self.N_x_sub*self.N_y,2)).reshape((self.N_x_sub*self.N_y*self.N_dist,2)),dtype=torch.float32,device=self.device)
             self.Dataset.length=self.Dataset.N_epochs*self.N_dist
-            return torch.utils.data.DataLoader(self.Dataset,batch_size=self.trainer.current_epoch+1,shuffle=True,drop_last=True)
+            #return torch.utils.data.DataLoader(self.Dataset,batch_size=self.trainer.current_epoch+1,shuffle=True,drop_last=True)
+            return torch.utils.data.DataLoader(self.Dataset,batch_size=5,shuffle=True,drop_last=True)  #### avoid too little training data for Critic (Batchnorm)
         else:
-            return torch.utils.data.DataLoader(self.Dataset,batch_size=self.max_batch,shuffle=True,drop_last=True)
+            #return torch.utils.data.DataLoader(self.Dataset,batch_size=self.max_batch,shuffle=True,drop_last=True)
+            return torch.utils.data.DataLoader(self.Dataset,batch_size=10,shuffle=True,drop_last=True)
 
 
     def val_dataloader(self):
