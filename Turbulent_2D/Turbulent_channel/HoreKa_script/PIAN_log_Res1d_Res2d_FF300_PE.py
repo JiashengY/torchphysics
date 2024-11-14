@@ -234,6 +234,7 @@ class ResNet1d(nn.Module):
         self.fc_combo5=nn.Linear(in_features=2048,out_features=2048)
         self.out=nn.Linear(in_features=2048,out_features=output_space.dim)
         #positional encoding with depth of 8 
+        self.PE_depth=PE_depth
         PE=torch.zeros((1,PE_depth,720),device=GPU)
         for k in torch.arange(720):
             for i in torch.arange(int(PE_depth/2)):
@@ -260,7 +261,7 @@ class ResNet1d(nn.Module):
     
     def forward(self,x,t):
         ##Residual 1d for roughness profile
-        x=x.expand(-1,PE_depth,-1) # expand dimension of dist [N_dist, 1, N_x] to [N_dist, PE_depth, N_x]
+        x=x.expand(-1,self.PE_depth,-1) # expand dimension of dist [N_dist, 1, N_x] to [N_dist, PE_depth, N_x]
         x=x+self.PE # position encoding
         x = self.conv1(x)
         x = self.maxpool(x)
